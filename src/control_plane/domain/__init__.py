@@ -8,6 +8,10 @@ from .models import (
     PlanStep,
     Task,
     TaskState,
+    ToolError,
+    ToolRequest,
+    ToolResult,
+    ToolResultStatus,
 )
 
 __all__ = [
@@ -18,4 +22,8 @@ __all__ = [
     "PlanStep",
     "Task",
     "TaskState",
+    "ToolError",
+    "ToolRequest",
+    "ToolResult",
+    "ToolResultStatus",
 ]

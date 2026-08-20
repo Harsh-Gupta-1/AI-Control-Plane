@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from typing import Any
+from uuid import uuid4
 
 
 class TaskState(str, Enum):
@@ -52,6 +53,54 @@ class ActionRecord:
     action_id: str
     request: ActionRequest
     recorded_at: datetime
+
+
+class ToolResultStatus(str, Enum):
+    """Outcome categories returned by the controlled tool dispatcher."""
+
+    SUCCESS = "success"
+    FAILURE = "failure"
+    BLOCKED = "blocked"
+    INVALID_REQUEST = "invalid_request"
+
+
+@dataclass
+class ToolRequest:
+    """A request for a named capability through the controlled dispatcher."""
+
+    tool_name: str
+    capability: str
+    arguments: dict[str, Any] = field(default_factory=dict)
+    request_id: str = field(default_factory=lambda: str(uuid4()))
+
+
+@dataclass
+class ToolError:
+    """Machine-readable failure information for a tool request."""
+
+    code: str
+    message: str
+
+
+@dataclass
+class ToolResult:
+    """Structured result returned by the dispatcher, never an exception leak."""
+
+    request_id: str
+    status: ToolResultStatus
+    output: dict[str, Any] = field(default_factory=dict)
+    error: ToolError | None = None
+
+    @classmethod
+    def failure(
+        cls, request_id: str, status: ToolResultStatus, code: str, message: str
+    ) -> "ToolResult":
+        """Build a non-success result with structured error details."""
+        return cls(
+            request_id=request_id,
+            status=status,
+            error=ToolError(code=code, message=message),
+        )
 
 
 @dataclass
