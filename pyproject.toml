@@ -7,7 +7,9 @@ name = "ai-computer-control-plane"
 version = "0.1.0"
 description = "Foundation for a governed AI computer control plane"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+    "docker>=7.0.0"
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]
