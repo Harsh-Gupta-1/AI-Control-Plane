@@ -26,7 +26,7 @@ class InvalidTaskTransition(ValueError):
 
 _ALLOWED_TRANSITIONS: dict[TaskState, frozenset[TaskState]] = {
     TaskState.PENDING: frozenset({TaskState.PLANNING, TaskState.CANCELLED}),
-    TaskState.PLANNING: frozenset({TaskState.RUNNING, TaskState.FAILED, TaskState.CANCELLED, TaskState.VERIFYING}),
+    TaskState.PLANNING: frozenset({TaskState.RUNNING, TaskState.FAILED, TaskState.CANCELLED, TaskState.VERIFYING, TaskState.WAITING_FOR_APPROVAL}),
     TaskState.RUNNING: frozenset({
         TaskState.COMPLETED, TaskState.FAILED, TaskState.CANCELLED,
         TaskState.WAITING_FOR_APPROVAL, TaskState.VERIFYING,

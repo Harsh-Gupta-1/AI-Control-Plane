@@ -134,3 +134,32 @@ class Task:
     plan: Plan | None = None
     actions: list[ActionRecord] = field(default_factory=list)
     observations: list[Observation] = field(default_factory=list)
+
+
+class ApprovalStatus(str, Enum):
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    EXPIRED = "expired"
+
+
+@dataclass
+class ApprovalRequest:
+    approval_id: str
+    task_id: str
+    request_id: str
+    tool_name: str
+    capability: str
+    arguments: dict[str, Any]
+    reason: str
+    status: ApprovalStatus = ApprovalStatus.PENDING
+    created_at: datetime | None = None
+    resolved_at: datetime | None = None
+    resolved_by: str | None = None
+
+
+@dataclass
+class ApprovalDecision:
+    approval_id: str
+    approved: bool
+    reason: str = ""

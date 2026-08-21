@@ -3,7 +3,7 @@
 import unittest
 
 from control_plane.domain import ToolRequest, ToolResultStatus
-from control_plane.policy import AllowListedPolicyGate
+from control_plane.policy import AllowListedPolicyGate, CapabilityPolicyGate, PolicyDecision
 from control_plane.tools import DuplicateToolError, ToolDispatcher, ToolNotFoundError, ToolRegistry
 from tests.unit.fake_tools import FailingTool, RecordingTool
 
@@ -118,6 +118,43 @@ class ToolDispatcherTests(unittest.TestCase):
         self.assertEqual(result.status, ToolResultStatus.FAILURE)
         self.assertEqual(result.error.code, "tool_execution_failed")
         self.assertEqual(failing_tool.execution_count, 1)
+
+    def test_blocks_unknown_capability_with_capability_gate(self) -> None:
+        dispatcher = ToolDispatcher(
+            self.registry,
+            CapabilityPolicyGate({"test.read": PolicyDecision.APPROVE})
+        )
+        # Capability not in rules defaults to BLOCK
+        result = dispatcher.dispatch(
+            ToolRequest("fake_read_tool", "test.other", {"value": "hello"})
+        )
+        self.assertEqual(result.status, ToolResultStatus.BLOCKED)
+        self.assertEqual(result.error.code, "policy_blocked")
+        
+    def test_requires_approval_for_approve_policy(self) -> None:
+        dispatcher = ToolDispatcher(
+            self.registry,
+            CapabilityPolicyGate({"test.read": PolicyDecision.APPROVE})
+        )
+        result = dispatcher.dispatch(
+            ToolRequest("fake_read_tool", "test.read", {"value": "hello"})
+        )
+        self.assertEqual(result.status, ToolResultStatus.BLOCKED)
+        self.assertEqual(result.error.code, "approval_required")
+        self.assertEqual(self.tool.execution_count, 0)
+        
+    def test_executes_approved_request(self) -> None:
+        dispatcher = ToolDispatcher(
+            self.registry,
+            CapabilityPolicyGate({"test.read": PolicyDecision.APPROVE})
+        )
+        result = dispatcher.dispatch(
+            ToolRequest("fake_read_tool", "test.read", {"value": "hello"}),
+            approved_request_id="some-approval-id"
+        )
+        self.assertEqual(result.status, ToolResultStatus.SUCCESS)
+        self.assertEqual(self.tool.execution_count, 1)
+
 
 
 if __name__ == "__main__":

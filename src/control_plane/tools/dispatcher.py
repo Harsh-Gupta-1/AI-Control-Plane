@@ -15,7 +15,7 @@ class ToolDispatcher:
         self._registry = registry
         self._policy_gate = policy_gate
 
-    def dispatch(self, request: object) -> ToolResult:
+    def dispatch(self, request: object, approved_request_id: str | None = None) -> ToolResult:
         """Return a structured result; never execute an invalid or blocked request."""
         validation_error = self._validate_request(request)
         if validation_error is not None:
@@ -23,7 +23,18 @@ class ToolDispatcher:
         assert isinstance(request, ToolRequest)
 
         policy_result = self._policy_gate.evaluate(request)
-        if policy_result.decision is not PolicyDecision.ALLOW:
+        
+        if policy_result.decision is PolicyDecision.APPROVE:
+            if approved_request_id is None:
+                return ToolResult.failure(
+                    request.request_id,
+                    ToolResultStatus.BLOCKED,
+                    "approval_required",
+                    policy_result.reason,
+                )
+            # Verified: this request was explicitly approved (verified by AgentLoop)
+            
+        elif policy_result.decision is PolicyDecision.BLOCK:
             return ToolResult.failure(
                 request.request_id,
                 ToolResultStatus.BLOCKED,

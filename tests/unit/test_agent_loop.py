@@ -8,6 +8,8 @@ from control_plane.runtime.task_runtime import TaskRuntime
 from control_plane.runtime.agent_loop import AgentLoop
 from control_plane.tools.dispatcher import ToolDispatcher
 from control_plane.tools.registry import ToolRegistry
+from control_plane.approval.in_memory import InMemoryApprovalStore
+from control_plane.policy.gate import CapabilityPolicyGate, PolicyDecision
 from tests.unit.fake_sandbox import FakeSandbox
 
 def test_agent_loop_simple_completion():
@@ -79,4 +81,87 @@ def test_agent_loop_repeated_action_detection():
     
     assert final_task.state == TaskState.COMPLETED
     assert final_task.observations[-2].content.startswith("status=failure error=unknown_tool:tool is not registered: nonexistent")
+
+
+def test_agent_loop_approval_workflow():
+    runtime = TaskRuntime()
+    registry = ToolRegistry()
+    
+    # We use a tool that requires APPROVE
+    policy = CapabilityPolicyGate({"cap": PolicyDecision.APPROVE})
+    dispatcher = ToolDispatcher(registry, policy)
+    approval_store = InMemoryApprovalStore()
+    
+    req = ToolRequest("nonexistent", "cap", {}, "req1")
+    
+    # A single proposal. Agent loop will pause for approval.
+    proposals = [
+        LLMProposal(action=ProposalAction.TOOL_CALL, tool_request=req),
+        LLMProposal(action=ProposalAction.COMPLETE, completion_reason="Done"),
+    ]
+    llm = FakeLLMProvider(proposals)
+    
+    # We'll run the loop in a thread or we can pre-approve in a mock?
+    # Wait, _wait_for_approval blocks. Since this is a test, we can mock _wait_for_approval,
+    # or just use a mock ApprovalStore that auto-approves.
+    # Actually, we can just patch _wait_for_approval to resolve it and then return.
+    
+    class AutoApprovingLoop(AgentLoop):
+        def _wait_for_approval(self, approval_id: str):
+            # Auto-approve
+            req = self._approval_store.get_request(approval_id)
+            from control_plane.domain.models import ApprovalDecision
+            self._approval_store.resolve(ApprovalDecision(approval_id, True))
+            return super()._wait_for_approval(approval_id)
+            
+    loop = AutoApprovingLoop(runtime, dispatcher, llm, approval_store=approval_store)
+    
+    task = runtime.create_task("Test approval")
+    final_task = loop.run(task.task_id)
+    
+    # The tool was unknown, so it will fail after approval, but it did get approved
+    assert final_task.state == TaskState.COMPLETED
+    
+    # Verify approval was created and approved
+    approvals = approval_store.get_pending_for_task(task.task_id)
+    assert len(approvals) == 0 # because it's resolved
+    
+    # Check observations: should see the failure from after it was approved
+    assert "status=failure error=unknown_tool" in final_task.observations[0].content
+
+
+def test_agent_loop_approval_rejection():
+    runtime = TaskRuntime()
+    registry = ToolRegistry()
+    
+    policy = CapabilityPolicyGate({"cap": PolicyDecision.APPROVE})
+    dispatcher = ToolDispatcher(registry, policy)
+    approval_store = InMemoryApprovalStore()
+    
+    req = ToolRequest("nonexistent", "cap", {}, "req1")
+    
+    proposals = [
+        LLMProposal(action=ProposalAction.TOOL_CALL, tool_request=req),
+        LLMProposal(action=ProposalAction.COMPLETE, completion_reason="Done"),
+    ]
+    llm = FakeLLMProvider(proposals)
+    
+    class AutoRejectingLoop(AgentLoop):
+        def _wait_for_approval(self, approval_id: str):
+            # Auto-reject
+            req = self._approval_store.get_request(approval_id)
+            from control_plane.domain.models import ApprovalDecision
+            self._approval_store.resolve(ApprovalDecision(approval_id, False))
+            return super()._wait_for_approval(approval_id)
+            
+    loop = AutoRejectingLoop(runtime, dispatcher, llm, approval_store=approval_store)
+    
+    task = runtime.create_task("Test approval")
+    final_task = loop.run(task.task_id)
+    
+    assert final_task.state == TaskState.COMPLETED
+    
+    # Check observations: should see the rejection
+    assert "status=blocked error=approval_rejected" in final_task.observations[0].content
+
 

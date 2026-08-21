@@ -2,11 +2,12 @@ import logging
 from uuid import uuid4
 
 from control_plane.domain import (
-    ActionRequest, Observation, Task, TaskState, Plan, PlanStep, ToolResultStatus
+    ActionRequest, Observation, Task, TaskState, Plan, PlanStep, ToolResultStatus, ApprovalRequest, ApprovalDecision
 )
 from control_plane.llm.contracts import AgentContext, LLMProvider, ProposalAction
 from control_plane.runtime.task_runtime import TaskRuntime
 from control_plane.tools.dispatcher import ToolDispatcher
+from control_plane.approval.contracts import ApprovalStore
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +32,7 @@ class AgentLoop:
         runtime: TaskRuntime,
         dispatcher: ToolDispatcher,
         llm: LLMProvider,
+        approval_store: ApprovalStore | None = None,
         max_iterations: int = 50,
         max_consecutive_failures: int = 3,
         context_action_history_limit: int = 10,
@@ -39,10 +41,26 @@ class AgentLoop:
         self._runtime = runtime
         self._dispatcher = dispatcher
         self._llm = llm
+        self._approval_store = approval_store
         self._max_iterations = max_iterations
         self._max_consecutive_failures = max_consecutive_failures
         self._context_action_history_limit = context_action_history_limit
         self._context_observation_limit = context_observation_limit
+        
+    def _wait_for_approval(self, approval_id: str) -> ApprovalDecision:
+        """Poll the approval store until resolved (MVP sync block)."""
+        if not self._approval_store:
+            # Fallback if no store provided: instantly reject
+            return ApprovalDecision(approval_id=approval_id, approved=False, reason="No approval store configured")
+            
+        import time
+        while True:
+            req = self._approval_store.get_request(approval_id)
+            if req.status == "approved":
+                return ApprovalDecision(approval_id=approval_id, approved=True, reason="Human approved")
+            elif req.status == "rejected":
+                return ApprovalDecision(approval_id=approval_id, approved=False, reason="Human rejected")
+            time.sleep(0.5)
         
     def run(self, task_id: str) -> Task:
         """Execute the agent loop for a task until completion or failure."""
@@ -163,6 +181,40 @@ class AgentLoop:
                 self._runtime.record_action(task_id, action_req)
                 
                 result = self._dispatcher.dispatch(req)
+                
+                if result.error and result.error.code == "approval_required":
+                    if not self._approval_store:
+                        obs_content = "Approval required but no approval store configured."
+                        result = ToolResult.failure(req.request_id, ToolResultStatus.BLOCKED, "approval_error", obs_content)
+                    else:
+                        approval = self._approval_store.create_request(ApprovalRequest(
+                            approval_id=str(uuid4()),
+                            task_id=task_id,
+                            request_id=req.request_id,
+                            tool_name=req.tool_name,
+                            capability=req.capability,
+                            arguments=req.arguments,
+                            reason=result.error.message,
+                        ))
+                        
+                        task = self._runtime.transition_task(task_id, TaskState.WAITING_FOR_APPROVAL)
+                        decision = self._wait_for_approval(approval.approval_id)
+                        
+                        task = self._runtime.transition_task(task_id, TaskState.RUNNING)
+                        if decision.approved:
+                            result = self._dispatcher.dispatch(req, approved_request_id=approval.approval_id)
+                        else:
+                            obs_content = f"status=blocked error=approval_rejected:Request was rejected"
+                            self._runtime.record_observation(task_id, Observation(
+                                observation_id=str(uuid4()),
+                                source=f"tool:{req.tool_name}",
+                                content=obs_content,
+                            ))
+                            consecutive_failures += 1
+                            if consecutive_failures >= self._max_consecutive_failures and task.state != TaskState.PLANNING:
+                                error_context = f"Failed {consecutive_failures} times consecutively. Last error: {obs_content}. Please replan."
+                                task = self._runtime.transition_task(task_id, TaskState.PLANNING)
+                            continue
                 
                 obs_content = _summarize_result(result)
                 self._runtime.record_observation(task_id, Observation(

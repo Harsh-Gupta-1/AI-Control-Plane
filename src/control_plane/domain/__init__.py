@@ -12,6 +12,9 @@ from .models import (
     ToolRequest,
     ToolResult,
     ToolResultStatus,
+    ApprovalStatus,
+    ApprovalRequest,
+    ApprovalDecision,
 )
 
 __all__ = [
@@ -26,4 +29,7 @@ __all__ = [
     "ToolRequest",
     "ToolResult",
     "ToolResultStatus",
+    "ApprovalStatus",
+    "ApprovalRequest",
+    "ApprovalDecision",
 ]
