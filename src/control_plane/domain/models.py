@@ -163,3 +163,14 @@ class ApprovalDecision:
     approval_id: str
     approved: bool
     reason: str = ""
+
+class FailureCategory(str, Enum):
+    TOOL_FAILURE = "tool_failure"          # Tool returned error
+    ENVIRONMENT_FAILURE = "environment_failure"  # Sandbox/Docker failure
+    TIMEOUT = "timeout"                     # Operation timed out
+    INVALID_INPUT = "invalid_input"         # Bad arguments or path
+    POLICY_REJECTION = "policy_rejection"   # Blocked by policy
+    APPROVAL_REJECTION = "approval_rejection"  # Human rejected
+    VERIFICATION_FAILURE = "verification_failure"  # Evidence doesn't match
+    ITERATION_LIMIT = "iteration_limit"     # Max iterations exceeded
+    LLM_FAILURE = "llm_failure"            # LLM provider error
