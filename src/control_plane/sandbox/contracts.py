@@ -103,3 +103,14 @@ class Sandbox(ABC):
 
         Raises SandboxError if the sandbox is not running or if execution invocation fails.
         """
+
+    @abstractmethod
+    def extract_file(self, sandbox_path: str, local_path: str) -> None:
+        """Extract a file or directory from the sandbox to the host filesystem.
+
+        Args:
+            sandbox_path: The absolute path inside the sandbox to extract.
+            local_path: The destination path on the host filesystem.
+
+        Raises SandboxError if the file cannot be extracted.
+        """

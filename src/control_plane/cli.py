@@ -195,6 +195,18 @@ def main(argv=None):
     destroy_parser = comp_subparsers.add_parser("destroy", help="Destroy a computer")
     destroy_parser.add_argument("id", type=str, help="Computer ID")
     
+    snapshot_parser = comp_subparsers.add_parser("snapshot", help="Snapshot a computer")
+    snapshot_parser.add_argument("id", type=str, help="Computer ID")
+    
+    rollback_parser = comp_subparsers.add_parser("rollback", help="Rollback a computer")
+    rollback_parser.add_argument("id", type=str, help="Computer ID")
+    rollback_parser.add_argument("snapshot_id", type=str, help="Snapshot ID")
+    
+    extract_parser = comp_subparsers.add_parser("extract", help="Extract an artifact from a computer")
+    extract_parser.add_argument("id", type=str, help="Computer ID")
+    extract_parser.add_argument("remote_path", type=str, help="Path inside the sandbox")
+    extract_parser.add_argument("local_path", type=str, help="Destination path on host")
+    
     args = parser.parse_args(argv)
     if args.command is None:
         parser.print_help()
@@ -226,6 +238,15 @@ def main(argv=None):
         elif args.comp_cmd == "destroy":
             manager.destroy_computer(args.id)
             print(f"Destroyed computer: {args.id}")
+        elif args.comp_cmd == "snapshot":
+            snap_id = manager.snapshot_computer(args.id)
+            print(f"Created snapshot: {snap_id} for computer {args.id}")
+        elif args.comp_cmd == "rollback":
+            manager.rollback_computer(args.id, args.snapshot_id)
+            print(f"Rolled back computer {args.id} to snapshot {args.snapshot_id}")
+        elif args.comp_cmd == "extract":
+            manager.extract_artifact(args.id, args.remote_path, args.local_path)
+            print(f"Extracted {args.remote_path} to {args.local_path}")
         sys.exit(0)
     
     # Run command logic below...

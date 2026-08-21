@@ -184,3 +184,36 @@ class ComputerManager:
         sandbox = DockerSandbox(shared_dir=session.metadata.get("shared_dir"))
         sandbox.attach(session.sandbox_id)
         return sandbox
+
+    def snapshot_computer(self, computer_id: str) -> str:
+        """Create a snapshot of the computer's sandbox state."""
+        sandbox = self.get_sandbox(computer_id)
+        snapshot_id = sandbox.snapshot()
+        
+        # We could store snapshot metadata in the computer session if desired
+        session = self.get_computer(computer_id)
+        if "snapshots" not in session.metadata:
+            session.metadata["snapshots"] = []
+        session.metadata["snapshots"].append({
+            "id": snapshot_id,
+            "created_at": datetime.now(timezone.utc).isoformat()
+        })
+        self.update_computer(session)
+        
+        return snapshot_id
+
+    def rollback_computer(self, computer_id: str, snapshot_id: str) -> None:
+        """Rollback the computer's sandbox to a specific snapshot."""
+        sandbox = self.get_sandbox(computer_id)
+        sandbox.rollback(snapshot_id)
+        
+        # After rollback, the sandbox container gets recreated, but the sandbox_id (which maps to id)
+        # stays the same because we attach via ID. However, let's update last_active_at
+        session = self.get_computer(computer_id)
+        session.last_active_at = datetime.now(timezone.utc)
+        self.update_computer(session)
+
+    def extract_artifact(self, computer_id: str, sandbox_path: str, local_path: str) -> None:
+        """Extract a file or directory from the computer's sandbox."""
+        sandbox = self.get_sandbox(computer_id)
+        sandbox.extract_file(sandbox_path, local_path)

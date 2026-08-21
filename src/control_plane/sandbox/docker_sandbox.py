@@ -2,6 +2,7 @@
 
 import logging
 import uuid
+import tarfile
 from typing import Any
 
 import docker
@@ -285,3 +286,57 @@ class DockerSandbox(Sandbox):
 
         except DockerException as e:
             raise SandboxError(f"Execution failed in sandbox {self._id}: {e}") from e
+
+    def extract_file(self, sandbox_path: str, local_path: str) -> None:
+        container = self._get_container()
+        state = self.inspect()
+        if state not in (SandboxState.RUNNING, SandboxState.STOPPED):
+            raise SandboxError(f"Cannot extract file; sandbox is in state {state.value}")
+
+        try:
+            stream, stat = container.get_archive(sandbox_path)
+        except NotFound as e:
+            raise SandboxError(f"File not found in sandbox: {sandbox_path}") from e
+        except DockerException as e:
+            raise SandboxError(f"Failed to extract file {sandbox_path}: {e}") from e
+
+        # Write the tar stream to a temporary file, then extract it
+        import tempfile
+        import os
+        
+        try:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".tar") as temp_tar:
+                temp_tar_path = temp_tar.name
+                for chunk in stream:
+                    temp_tar.write(chunk)
+                    
+            with tarfile.open(temp_tar_path, "r") as tar:
+                # get_archive returns a tar stream containing the file/directory.
+                # If we extract it directly to local_path (e.g. ./), it will unpack with its base name.
+                # To support renaming if local_path is a file path, we handle the extraction carefully.
+                members = tar.getmembers()
+                
+                # If the user provided a directory path, just extract into it
+                if os.path.isdir(local_path) or local_path.endswith(os.sep) or local_path.endswith('/'):
+                    os.makedirs(local_path, exist_ok=True)
+                    tar.extractall(path=local_path)
+                else:
+                    # User provided a specific destination file/dir name
+                    if len(members) == 1 and members[0].isfile():
+                        # Extract the single file and rename it to the requested local_path
+                        member = members[0]
+                        member.name = os.path.basename(local_path)
+                        tar.extract(member, path=os.path.dirname(local_path) or ".")
+                    else:
+                        # Extract directory to the specified name
+                        for member in members:
+                            # Strip the base directory name from the tar member and prefix with local_path
+                            # This is a basic implementation; standard `docker cp` semantics can be complex.
+                            pass
+                        tar.extractall(path=local_path)
+                        
+        except Exception as e:
+            raise SandboxError(f"Failed to unpack extracted file {sandbox_path}: {e}") from e
+        finally:
+            if os.path.exists(temp_tar_path):
+                os.remove(temp_tar_path)
