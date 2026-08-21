@@ -10,6 +10,27 @@ from typing import Any
 from uuid import uuid4
 
 
+class ComputerStatus(str, Enum):
+    """Lifecycle states for a persistent computer session."""
+    
+    CREATING = "creating"
+    READY = "ready"
+    RUNNING = "running"
+    STOPPED = "stopped"
+    ERROR = "error"
+    DESTROYED = "destroyed"
+
+@dataclass
+class ComputerSession:
+    """A persistent, sandboxed computer session that outlives individual tasks."""
+    
+    id: str
+    status: ComputerStatus
+    sandbox_id: str
+    created_at: datetime
+    last_active_at: datetime
+    metadata: dict[str, Any] = field(default_factory=dict)
+
 class TaskState(str, Enum):
     """Lifecycle states for a task managed by the runtime."""
 

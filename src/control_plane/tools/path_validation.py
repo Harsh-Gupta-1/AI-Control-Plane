@@ -1,7 +1,7 @@
 """Path validation utilities for sandbox tools."""
 import posixpath
 
-ALLOWED_ROOTS = ("/workspace", "/downloads", "/input", "/output", "/temp")
+ALLOWED_ROOTS = ("/workspace", "/downloads", "/input", "/output", "/temp", "/shared")
 
 def validate_sandbox_path(path: str) -> str:
     """Normalize and validate a path is within sandbox boundaries.

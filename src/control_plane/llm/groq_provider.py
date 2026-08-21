@@ -27,13 +27,14 @@ Schema:
 }
 """
 
-class OllamaProvider(LLMProvider):
-    """Local Ollama adapter implementing LLMProvider."""
+class GroqProvider(LLMProvider):
+    """Groq API adapter implementing LLMProvider."""
     
-    def __init__(self, model: str = "qwen2.5:7b", base_url: str = "http://localhost:11434", max_retries: int = 2) -> None:
+    def __init__(self, api_key: str, model: str = "qwen/qwen3.6-27b", max_retries: int = 2) -> None:
+        self._api_key = api_key
         self._model = model
-        self._base_url = base_url.rstrip("/")
         self._max_retries = max_retries
+        self._base_url = "https://api.groq.com/openai/v1/chat/completions"
         
     def _format_prompt(self, context: AgentContext) -> str:
         prompt = f"TASK GOAL: {context.task_goal}\n\n"
@@ -68,27 +69,28 @@ class OllamaProvider(LLMProvider):
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": prompt}
             ],
-            "stream": False,
-            "format": "json",
-            "options": {
-                "num_gpu": 99
-            }
+            "response_format": {"type": "json_object"}
         }
         
-        url = f"{self._base_url}/api/chat"
-        data = json.dumps(payload).encode("utf-8")
-        req = urllib.request.Request(url, data=data, headers={'Content-Type': 'application/json'})
+        headers = {
+            "Authorization": f"Bearer {self._api_key}",
+            "Content-Type": "application/json",
+            "User-Agent": "ControlPlaneAgent/1.0"
+        }
         
         retries = 0
         last_error = None
         
         while retries <= self._max_retries:
             try:
-                with urllib.request.urlopen(req, timeout=120) as response:
+                data = json.dumps(payload).encode("utf-8")
+                req = urllib.request.Request(self._base_url, data=data, headers=headers)
+                
+                with urllib.request.urlopen(req, timeout=30) as response:
                     body = response.read().decode("utf-8")
                     result = json.loads(body)
                     
-                content = result.get("message", {}).get("content", "")
+                content = result["choices"][0]["message"]["content"]
                 
                 try:
                     parsed = json.loads(content)
@@ -96,14 +98,15 @@ class OllamaProvider(LLMProvider):
                 except (json.JSONDecodeError, ValueError, KeyError) as e:
                     last_error = f"Malformed output: {e}"
                     retries += 1
-                    # Append failure instruction to user prompt for the retry
                     payload["messages"].append({"role": "assistant", "content": content})
-                    payload["messages"].append({"role": "user", "content": f"Your output was malformed. Fix this error and return valid JSON: {e}"})
-                    data = json.dumps(payload).encode("utf-8")
-                    req = urllib.request.Request(url, data=data, headers={'Content-Type': 'application/json'})
+                    payload["messages"].append({"role": "user", "content": f"Your output was malformed. Fix this error and return valid JSON matching the schema: {e}"})
                     
             except urllib.error.URLError as e:
-                raise LLMError(f"Connection to Ollama failed: {e}") from e
+                # Give more detailed error message for groq API errors if available
+                if hasattr(e, 'read'):
+                    err_body = e.read().decode('utf-8')
+                    raise LLMError(f"Connection to Groq failed: {e}. Body: {err_body}") from e
+                raise LLMError(f"Connection to Groq failed: {e}") from e
             except Exception as e:
                 raise LLMError(f"Unexpected provider error: {e}") from e
                 

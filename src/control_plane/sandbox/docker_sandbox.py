@@ -24,17 +24,19 @@ WORKSPACE_PATHS = [
     "/input",
     "/output",
     "/temp",
+    "/shared",
 ]
 
 
 class DockerSandbox(Sandbox):
     """A disposable Docker container providing an isolated computer environment."""
 
-    def __init__(self, image: str = "control-plane-sandbox:latest") -> None:
+    def __init__(self, image: str = "control-plane-sandbox:latest", shared_dir: str | None = None) -> None:
         """Initialize the Docker sandbox.
 
         This creates the container but does not start it.
         """
+        self._shared_dir = shared_dir
         self._id = str(uuid.uuid4())
         self._container_name = f"sandbox-{self._id}"
 
@@ -54,14 +56,19 @@ class DockerSandbox(Sandbox):
                 
             # We use tail -f /dev/null as an idle process to keep the container running
             # when started.
+            volumes = None
+            if self._shared_dir:
+                import os
+                abs_shared = os.path.abspath(self._shared_dir)
+                volumes = {abs_shared: {'bind': '/shared', 'mode': 'rw'}}
+                
             self._container = self._client.containers.create(
                 image,
                 command=["tail", "-f", "/dev/null"],
                 name=self._container_name,
                 detach=True,
                 network_mode="bridge",
-                # Security: no bind mounts to the host!
-                volumes=None,
+                volumes=volumes,
                 # Create the standard isolated workspace directories
                 working_dir="/workspace",
             )

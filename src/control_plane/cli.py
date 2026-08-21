@@ -143,7 +143,8 @@ class TeeTraceSink(TraceSink):
             result = event.payload.get("status", "")
             payload_str = f"Verification -> {result}"
         elif event.event_type == TraceEventType.TASK_COMPLETED:
-            payload_str = "Task finished successfully"
+            reason = event.payload.get("reason", "")
+            payload_str = f"Task finished successfully. {reason}"
         elif event.event_type == TraceEventType.TASK_FAILED:
             payload_str = f"Task failed: {event.payload.get('error', '')}"
         elif event.event_type == TraceEventType.TASK_CREATED:
@@ -156,30 +157,99 @@ def main(argv=None):
     if argv is None:
         argv = sys.argv[1:]
         
+    if len(argv) > 0 and argv[0] not in ["computer", "-h", "--help"] and argv[0].startswith("--"):
+        # Legacy mode: it's a run command, let's insert 'run'
+        argv = ["run"] + argv
+        
     parser = argparse.ArgumentParser(description="AI Computer Control Plane CLI")
-    parser.add_argument("--goal", type=str, required=True, help="The task goal string.")
-    parser.add_argument("--trace-out", type=str, default="trace.jsonl", help="Path to write the JSON-lines trace.")
-    parser.add_argument("--real-sandbox", action="store_true", help="Use real DockerSandbox instead of FakeSandbox.")
-    parser.add_argument("--llm", type=str, choices=["fake", "ollama"], default="fake", help="LLM provider to use.")
-    parser.add_argument("--model", type=str, default="qwen2.5-coder:7b", help="Model to use if --llm ollama (default: qwen2.5-coder:7b).")
-    parser.add_argument("--auto-approve", action="store_true", help="Automatically approve actions (default in fake mode).")
-    parser.add_argument("--no-auto-approve", action="store_true", help="Disable automatic approval.")
+    subparsers = parser.add_subparsers(dest="command", help="Command to run")
+    
+    # Subcommand: run
+    run_parser = subparsers.add_parser("run", help="Run a task")
+    run_parser.add_argument("--goal", type=str, required=True, help="The task goal string.")
+    run_parser.add_argument("--trace-out", type=str, default="trace.jsonl", help="Path to write the JSON-lines trace.")
+    run_parser.add_argument("--real-sandbox", action="store_true", help="Use real DockerSandbox instead of FakeSandbox.")
+    run_parser.add_argument("--llm", type=str, choices=["fake", "ollama", "groq"], default="ollama", help="LLM provider to use.")
+    run_parser.add_argument("--model", type=str, default="qwen2.5-coder:7b", help="Model to use (default: qwen2.5-coder:7b for ollama, qwen/qwen3.6-27b for groq).")
+    run_parser.add_argument("--groq-key", type=str, help="Groq API key if using --llm groq")
+    run_parser.add_argument("--auto-approve", action="store_true", help="Automatically approve actions (default in fake mode).")
+    run_parser.add_argument("--no-auto-approve", action="store_true", help="Disable automatic approval.")
+    run_parser.add_argument("--shared-dir", type=str, help="Host directory to mount into the sandbox at /shared.")
+    run_parser.add_argument("--computer-id", type=str, help="Attach to an existing persistent computer session.")
+    run_parser.add_argument("--destroy-on-exit", action="store_true", help="Destroy the computer after task finishes.")
+    
+    # Subcommand: computer
+    comp_parser = subparsers.add_parser("computer", help="Manage persistent computers")
+    comp_subparsers = comp_parser.add_subparsers(dest="comp_cmd", help="Computer command")
+    
+    comp_subparsers.add_parser("list", help="List all computers")
+    create_parser = comp_subparsers.add_parser("create", help="Create a new computer")
+    create_parser.add_argument("--shared-dir", type=str, help="Host directory to mount into the sandbox at /shared.")
+    
+    start_parser = comp_subparsers.add_parser("start", help="Start a computer")
+    start_parser.add_argument("id", type=str, help="Computer ID")
+    
+    stop_parser = comp_subparsers.add_parser("stop", help="Stop a computer")
+    stop_parser.add_argument("id", type=str, help="Computer ID")
+    
+    destroy_parser = comp_subparsers.add_parser("destroy", help="Destroy a computer")
+    destroy_parser.add_argument("id", type=str, help="Computer ID")
     
     args = parser.parse_args(argv)
+    if args.command is None:
+        parser.print_help()
+        sys.exit(1)
+        
+    from control_plane.sandbox.manager import ComputerManager
+    manager = ComputerManager()
     
+    if args.command == "computer":
+        if not args.comp_cmd:
+            comp_parser.print_help()
+            sys.exit(1)
+        if args.comp_cmd == "list":
+            comps = manager.list_computers()
+            if not comps:
+                print("No computers found.")
+            else:
+                for c in comps:
+                    print(f"ID: {c.id} | Status: {c.status.value} | Created: {c.created_at}")
+        elif args.comp_cmd == "create":
+            c = manager.create_computer(shared_dir=args.shared_dir)
+            print(f"Created computer: {c.id}")
+        elif args.comp_cmd == "start":
+            manager.start_computer(args.id)
+            print(f"Started computer: {args.id}")
+        elif args.comp_cmd == "stop":
+            manager.stop_computer(args.id)
+            print(f"Stopped computer: {args.id}")
+        elif args.comp_cmd == "destroy":
+            manager.destroy_computer(args.id)
+            print(f"Destroyed computer: {args.id}")
+        sys.exit(0)
+    
+    # Run command logic below...
     # Determine auto-approve default based on mode
     auto_approve = args.auto_approve
     if args.llm == "fake" and not args.no_auto_approve:
         auto_approve = True
 
     # 1. Setup Sandbox
+    computer_id = None
     if args.real_sandbox:
         try:
-            from control_plane.sandbox.docker_sandbox import DockerSandbox
-            import docker
-            docker.from_env() # test connection
-            sandbox = DockerSandbox()
-            sandbox.start()
+            if args.computer_id:
+                computer_id = args.computer_id
+                sandbox = manager.get_sandbox(computer_id)
+                # Ensure it's running
+                from control_plane.domain.models import ComputerStatus
+                if manager.get_computer(computer_id).status != ComputerStatus.RUNNING:
+                    manager.start_computer(computer_id)
+            else:
+                # Create a temporary computer for this run
+                comp = manager.create_computer(shared_dir=args.shared_dir)
+                computer_id = comp.id
+                sandbox = manager.start_computer(computer_id)
         except Exception as e:
             print(f"Error initializing Docker sandbox: {e}")
             sys.exit(1)
@@ -197,28 +267,38 @@ def main(argv=None):
         else:
             # We would register real tools here if requested, 
             # but for demo we can just stick to simple filesystem tools.
-            from control_plane.tools.filesystem import FilesystemWriteTool, FilesystemReadTool
-            registry.register(FilesystemWriteTool(sandbox))
-            registry.register(FilesystemReadTool(sandbox))
+            from control_plane.tools.filesystem import WriteFileTool, ReadFileTool
+            registry.register(WriteFileTool(sandbox))
+            registry.register(ReadFileTool(sandbox))
 
-        # 3. Setup Policy & Dispatcher
-        policy_gate = CapabilityPolicyGate()
-        dispatcher = ToolDispatcher(registry, policy_gate)
-
-        # 4. Setup Approval
+        # 3. Setup Approval
         class DemoApprovalStore(InMemoryApprovalStore):
             def wait_for_resolution(self, approval_id, timeout_seconds):
+                from control_plane.domain.models import ApprovalDecision
                 if auto_approve:
-                    from control_plane.domain.models import ApprovalDecision
                     self.resolve(ApprovalDecision(approval_id, True))
+                else:
+                    ans = input(f"\n[?] Policy Gate: Approve this action? (y/N): ")
+                    self.resolve(ApprovalDecision(approval_id, ans.strip().lower() == 'y'))
                 return super().wait_for_resolution(approval_id, timeout_seconds)
                 
         approval_store = DemoApprovalStore()
         authorizer = DefaultApprovalAuthorizer(approval_store)
 
+        # 4. Setup Policy & Dispatcher
+        policy_gate = CapabilityPolicyGate()
+        dispatcher = ToolDispatcher(registry, policy_gate, authorizer)
+
         # 5. Setup LLM
         if args.llm == "fake":
             llm_provider = FakeLLMProvider()
+        elif args.llm == "groq":
+            from control_plane.llm.groq_provider import GroqProvider
+            if not args.groq_key:
+                print("Error: --groq-key is required when using --llm groq")
+                return 1
+            model_name = args.model if args.model != "qwen2.5-coder:7b" else "qwen/qwen3.6-27b"
+            llm_provider = GroqProvider(api_key=args.groq_key, model=model_name)
         else:
             from control_plane.llm.ollama_provider import OllamaProvider
             llm_provider = OllamaProvider(base_url="http://localhost:11434", model=args.model)
@@ -248,8 +328,14 @@ def main(argv=None):
         print(f"Trace written to: {trace_path.absolute()}")
         
     finally:
-        sandbox.stop()
-        sandbox.destroy()
+        if args.real_sandbox and computer_id:
+            if args.destroy_on_exit:
+                manager.destroy_computer(computer_id)
+            # otherwise, leave it running or stop it?
+            # By default, leave it as is so it's persistent!
+        elif not args.real_sandbox:
+            sandbox.stop()
+            sandbox.destroy()
 
 if __name__ == "__main__":
     main()
