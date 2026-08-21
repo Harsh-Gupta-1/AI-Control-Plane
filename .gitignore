@@ -29,3 +29,7 @@ share/python-wheels/
 
 # Testing
 .pytest_cache/
+
+# Docs/Plans
+docs/plan-*
+docs/implementation-plan.md

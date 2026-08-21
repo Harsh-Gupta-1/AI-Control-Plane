@@ -22,6 +22,7 @@ class SandboxResult:
     stdout: str
     stderr: str
     timed_out: bool
+    output_truncated: bool
 
 
 class SandboxError(Exception):
@@ -65,12 +66,13 @@ class Sandbox(ABC):
         """
 
     @abstractmethod
-    def execute(self, command: list[str], timeout_seconds: int) -> SandboxResult:
+    def execute(self, command: list[str], timeout_seconds: int, max_output_bytes: int = 1048576) -> SandboxResult:
         """Execute a narrow command inside the sandbox.
 
         Args:
             command: The command and its arguments.
             timeout_seconds: The maximum allowed execution time.
+            max_output_bytes: The maximum number of bytes to read from stdout/stderr.
 
         Returns:
             SandboxResult with bounded outputs, exit code, and timeout status.

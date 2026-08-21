@@ -145,7 +145,7 @@ class DockerSandbox(Sandbox):
         except DockerException as e:
             raise SandboxError(f"Failed to inspect sandbox {self._id}: {e}") from e
 
-    def execute(self, command: list[str], timeout_seconds: int) -> SandboxResult:
+    def execute(self, command: list[str], timeout_seconds: int, max_output_bytes: int = 1048576) -> SandboxResult:
         container = self._get_container()
         state = self.inspect()
         if state != SandboxState.RUNNING:
@@ -154,28 +154,61 @@ class DockerSandbox(Sandbox):
         try:
             # Docker python SDK doesn't natively support timeouts on exec_run.
             # We can use the 'timeout' linux command inside the container to enforce it.
-            # If the base image doesn't have 'timeout', this may fail, but coreutils is standard.
             timeout_cmd = ["timeout", str(timeout_seconds)] + command
             
-            # Bounded output reading is achieved by passing demux=True, but we must
-            # also be careful not to read infinite streams. docker SDK buffers it.
-            # For this simple primitive, we use the synchronous exec_run.
-            exit_code, output = container.exec_run(
+            exec_id = self._client.api.exec_create(
+                container.id,
                 timeout_cmd,
-                demux=True,
+                tty=False
             )
             
-            stdout_bytes, stderr_bytes = output if output else (b"", b"")
-            stdout_str = stdout_bytes.decode("utf-8", errors="replace") if stdout_bytes else ""
-            stderr_str = stderr_bytes.decode("utf-8", errors="replace") if stderr_bytes else ""
+            output_stream = self._client.api.exec_start(
+                exec_id['Id'], 
+                stream=True, 
+                demux=True
+            )
+            
+            stdout_bytes = bytearray()
+            stderr_bytes = bytearray()
+            output_truncated = False
+            
+            for chunk in output_stream:
+                stdout_chunk, stderr_chunk = chunk
+                if stdout_chunk:
+                    stdout_bytes.extend(stdout_chunk)
+                if stderr_chunk:
+                    stderr_bytes.extend(stderr_chunk)
+                    
+                if len(stdout_bytes) + len(stderr_bytes) > max_output_bytes:
+                    output_truncated = True
+                    output_stream.close()
+                    break
+
+            exec_info = self._client.api.exec_inspect(exec_id['Id'])
+            exit_code = exec_info.get('ExitCode')
+            
+            if exit_code is None:
+                # If we truncated and broke early, the process may still be running
+                # We can't know the final exit code, so we use a fallback.
+                exit_code = -1
 
             timed_out = (exit_code == 124) # standard exit code for 'timeout' command
+
+            # Convert to strings, truncating to exact max_output_bytes if we exceeded it
+            # just in case the last chunk was very large
+            if output_truncated:
+                stdout_bytes = stdout_bytes[:max_output_bytes]
+                stderr_bytes = stderr_bytes[:max_output_bytes]
+
+            stdout_str = stdout_bytes.decode("utf-8", errors="replace")
+            stderr_str = stderr_bytes.decode("utf-8", errors="replace")
 
             return SandboxResult(
                 exit_code=exit_code,
                 stdout=stdout_str,
                 stderr=stderr_str,
                 timed_out=timed_out,
+                output_truncated=output_truncated,
             )
 
         except DockerException as e:

@@ -69,25 +69,28 @@ def test_sandbox_isolation(sandbox: DockerSandbox):
     """Prove that no host bind mounts exist and files stay inside the container."""
     sandbox.start()
     
-    # Inspect the underlying Docker container configuration
+    # 1. Verify no host bind mounts exist at the Docker API level
     container = sandbox._get_container()
     container.reload()
     binds = container.attrs["HostConfig"]["Binds"]
-    
-    # Assert no host directories are bound
     assert binds is None or len(binds) == 0, f"Found host bind mounts: {binds}"
     
-    # Create a file inside the sandbox
+    # 2. Create a file inside the sandbox at /workspace
     test_filename = f"test_isolation_{uuid.uuid4().hex}.txt"
     sandbox.execute(["touch", f"/workspace/{test_filename}"], timeout_seconds=5)
     
-    # Verify the file does NOT exist on the host machine in the current directory
-    # (Since we didn't mount it, it shouldn't, but let's double check)
-    assert not os.path.exists(test_filename)
-    
-    # Verify it DOES exist inside the sandbox
+    # 3. Verify it DOES exist inside the sandbox
     result = sandbox.execute(["ls", f"/workspace/{test_filename}"], timeout_seconds=5)
     assert result.exit_code == 0
+    
+    # 4. Prove the host filesystem is not modified
+    # We check both the current project directory (in case it was mapped locally)
+    # and the host's absolute /workspace equivalent (in case it was mapped by absolute path).
+    host_local_path = os.path.join(os.getcwd(), test_filename)
+    host_absolute_path = os.path.join(os.path.abspath("/workspace"), test_filename)
+    
+    assert not os.path.exists(host_local_path), "File leaked to host project directory!"
+    assert not os.path.exists(host_absolute_path), "File leaked to host absolute /workspace directory!"
 
 
 def test_sandbox_execution_success(sandbox: DockerSandbox):
@@ -100,6 +103,7 @@ def test_sandbox_execution_success(sandbox: DockerSandbox):
     assert result.stdout.strip() == "hello world"
     assert result.stderr == ""
     assert not result.timed_out
+    assert not result.output_truncated
 
 
 def test_sandbox_execution_failure(sandbox: DockerSandbox):
@@ -111,6 +115,7 @@ def test_sandbox_execution_failure(sandbox: DockerSandbox):
     assert result.exit_code != 0
     assert "No such file or directory" in result.stderr
     assert not result.timed_out
+    assert not result.output_truncated
 
 
 def test_sandbox_execution_timeout(sandbox: DockerSandbox):
@@ -122,6 +127,34 @@ def test_sandbox_execution_timeout(sandbox: DockerSandbox):
     
     assert result.exit_code == 124  # standard timeout exit code
     assert result.timed_out
+    assert not result.output_truncated
+
+
+def test_sandbox_execution_truncation(sandbox: DockerSandbox):
+    """Verify that output exceeding the max bytes limit is truncated."""
+    sandbox.start()
+    
+    # Generate 10000 bytes of output
+    command = ["head", "-c", "10000", "/dev/zero"]
+    # Limit to 1000 bytes
+    max_bytes = 1000
+    
+    result = sandbox.execute(command, timeout_seconds=5, max_output_bytes=max_bytes)
+    
+    assert result.output_truncated is True
+    # Due to chunking, exact length might be slightly off if we didn't strict slice, 
+    # but we added exact slicing in the adapter!
+    assert len(result.stdout) == max_bytes
+    # Since we broke the stream early, the command may still run or get killed, 
+    # but the output size is strictly bound.
+    
+    # Test stderr truncation as well
+    # Generate large output on stderr
+    command_stderr = ["sh", "-c", "head -c 10000 /dev/zero >&2"]
+    result_stderr = sandbox.execute(command_stderr, timeout_seconds=5, max_output_bytes=max_bytes)
+    
+    assert result_stderr.output_truncated is True
+    assert len(result_stderr.stderr) == max_bytes
 
 
 def test_sandbox_invalid_lifecycle_operations(sandbox: DockerSandbox):
