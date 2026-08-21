@@ -174,6 +174,7 @@ def main(argv=None):
     run_parser.add_argument("--groq-key", type=str, help="Groq API key if using --llm groq")
     run_parser.add_argument("--auto-approve", action="store_true", help="Automatically approve actions (default in fake mode).")
     run_parser.add_argument("--no-auto-approve", action="store_true", help="Disable automatic approval.")
+    run_parser.add_argument("--allowed-capabilities", type=str, help="Comma-separated list of allowed capabilities. If set, restricts LLM access to these only.")
     run_parser.add_argument("--shared-dir", type=str, help="Host directory to mount into the sandbox at /shared.")
     run_parser.add_argument("--computer-id", type=str, help="Attach to an existing persistent computer session.")
     run_parser.add_argument("--destroy-on-exit", action="store_true", help="Destroy the computer after task finishes.")
@@ -340,8 +341,14 @@ def main(argv=None):
         trace_sink = TeeTraceSink(json_sink, is_demo_mode=auto_approve)
 
         # 7. Create Task & Loop
+        from control_plane.domain.models import CapabilityConstraints
         runtime = TaskRuntime()
-        task = runtime.create_task(args.goal)
+        constraints = None
+        if args.allowed_capabilities:
+            caps = frozenset([c.strip() for c in args.allowed_capabilities.split(",")])
+            constraints = CapabilityConstraints(allowed_capabilities=caps)
+            
+        task = runtime.create_task(args.goal, capability_constraints=constraints)
         
         loop = AgentLoop(
             runtime=runtime,

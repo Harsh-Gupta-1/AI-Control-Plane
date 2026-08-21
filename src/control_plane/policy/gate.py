@@ -54,6 +54,9 @@ POLICY_RULES: dict[str, PolicyDecision] = {
     
     # Terminal
     "terminal.execute": PolicyDecision.APPROVE,
+    "terminal.execute_background": PolicyDecision.APPROVE,
+    "terminal.get_background_status": PolicyDecision.ALLOW,
+    "terminal.stop_background": PolicyDecision.APPROVE,
     
     # Browser
     "browser.navigate": PolicyDecision.ALLOW,
