@@ -23,9 +23,11 @@ class TaskRuntimeTests(unittest.TestCase):
     def test_valid_transitions_are_applied(self) -> None:
         task = self.runtime.create_task("Complete a controlled task")
 
+        planning = self.runtime.transition_task(task.task_id, TaskState.PLANNING)
         running = self.runtime.transition_task(task.task_id, TaskState.RUNNING)
         completed = self.runtime.transition_task(task.task_id, TaskState.COMPLETED)
 
+        self.assertEqual(planning.state, TaskState.PLANNING)
         self.assertEqual(running.state, TaskState.RUNNING)
         self.assertEqual(completed.state, TaskState.COMPLETED)
         self.assertEqual(self.runtime.get_task(task.task_id).state, TaskState.COMPLETED)

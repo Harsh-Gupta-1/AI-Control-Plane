@@ -14,7 +14,10 @@ class TaskState(str, Enum):
     """Lifecycle states for a task managed by the runtime."""
 
     PENDING = "pending"
+    PLANNING = "planning"
     RUNNING = "running"
+    WAITING_FOR_APPROVAL = "waiting_for_approval"
+    VERIFYING = "verifying"
     COMPLETED = "completed"
     FAILED = "failed"
     CANCELLED = "cancelled"
@@ -33,6 +36,7 @@ class Plan:
     """An ordered, optional plan associated with a task."""
 
     steps: list[PlanStep] = field(default_factory=list)
+    current_step_index: int = 0
 
 
 @dataclass

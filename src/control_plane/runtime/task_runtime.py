@@ -25,10 +25,15 @@ class InvalidTaskTransition(ValueError):
 
 
 _ALLOWED_TRANSITIONS: dict[TaskState, frozenset[TaskState]] = {
-    TaskState.PENDING: frozenset({TaskState.RUNNING, TaskState.CANCELLED}),
-    TaskState.RUNNING: frozenset(
-        {TaskState.COMPLETED, TaskState.FAILED, TaskState.CANCELLED}
-    ),
+    TaskState.PENDING: frozenset({TaskState.PLANNING, TaskState.CANCELLED}),
+    TaskState.PLANNING: frozenset({TaskState.RUNNING, TaskState.FAILED, TaskState.CANCELLED, TaskState.VERIFYING}),
+    TaskState.RUNNING: frozenset({
+        TaskState.COMPLETED, TaskState.FAILED, TaskState.CANCELLED,
+        TaskState.WAITING_FOR_APPROVAL, TaskState.VERIFYING,
+        TaskState.PLANNING,  # replan
+    }),
+    TaskState.WAITING_FOR_APPROVAL: frozenset({TaskState.RUNNING, TaskState.CANCELLED}),
+    TaskState.VERIFYING: frozenset({TaskState.COMPLETED, TaskState.FAILED, TaskState.RUNNING}),
     TaskState.COMPLETED: frozenset(),
     TaskState.FAILED: frozenset(),
     TaskState.CANCELLED: frozenset(),
@@ -72,6 +77,14 @@ class TaskRuntime:
             )
 
         task.state = new_state
+        task.updated_at = _utc_now()
+        return deepcopy(task)
+
+    def update_plan(self, task_id: str, plan: Plan) -> Task:
+        """Update the plan for a non-terminal task."""
+        task = self._get_canonical_task(task_id)
+        self._require_active(task)
+        task.plan = deepcopy(plan)
         task.updated_at = _utc_now()
         return deepcopy(task)
 
