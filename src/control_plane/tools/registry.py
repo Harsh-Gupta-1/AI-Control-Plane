@@ -28,14 +28,14 @@ class ToolRegistry:
 
     def get_metadata(self, name: str) -> ToolMetadata:
         """Return metadata for a tool without exposing its implementation."""
-        return self._resolve(name).metadata
+        return self.resolve_tool(name).metadata
 
     def available_tools(self) -> tuple[ToolMetadata, ...]:
         """Return metadata for all registered tools in registration order."""
         return tuple(tool.metadata for tool in self._tools.values())
 
-    def _resolve(self, name: str) -> Tool:
-        """Resolve an implementation for use by the controlled dispatcher only."""
+    def resolve_tool(self, name: str) -> Tool:
+        """Resolve an implementation for use by the controlled dispatcher."""
         try:
             return self._tools[name]
         except KeyError as error:

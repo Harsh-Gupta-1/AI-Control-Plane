@@ -3,7 +3,26 @@ import base64
 from control_plane.sandbox.contracts import Sandbox
 from control_plane.domain import ToolRequest, ToolResult, ToolResultStatus
 from control_plane.tools.contracts import Tool, ToolMetadata, ToolInputSchema
-from control_plane.tools.path_validation import validate_sandbox_path
+from control_plane.tools.path_validation import validate_sandbox_path, ALLOWED_ROOTS
+
+def _resolve_and_validate_path(sandbox: Sandbox, path: str) -> str:
+    """Validate path and securely resolve symlinks using the sandbox."""
+    # First do lexical validation to prevent basic injection / windows paths
+    lexical_path = validate_sandbox_path(path)
+    
+    # Run realpath -m inside the sandbox to canonically resolve all symlinks 
+    # (even for missing components, which is needed for write_file/move_file)
+    result = sandbox.execute(["realpath", "-m", lexical_path], timeout_seconds=10)
+    if result.exit_code != 0:
+        raise ValueError(f"Failed to resolve path: {result.stderr.strip()}")
+        
+    resolved_path = result.stdout.strip()
+    
+    # Ensure the resolved canonical path is still within allowed roots
+    if not any(resolved_path == root or resolved_path.startswith(root + "/") for root in ALLOWED_ROOTS):
+        raise ValueError(f"path resolves outside sandbox boundaries: {resolved_path}")
+        
+    return resolved_path
 
 class ListDirectoryTool(Tool):
     """Tool to list directory contents inside the sandbox."""
@@ -23,7 +42,7 @@ class ListDirectoryTool(Tool):
 
     def _execute(self, request: ToolRequest) -> ToolResult:
         try:
-            path = validate_sandbox_path(request.arguments.get("path", ""))
+            path = _resolve_and_validate_path(self._sandbox, request.arguments.get("path", ""))
         except ValueError as e:
             return ToolResult.failure(
                 request.request_id,
@@ -100,7 +119,7 @@ class ReadFileTool(Tool):
 
     def _execute(self, request: ToolRequest) -> ToolResult:
         try:
-            path = validate_sandbox_path(request.arguments.get("path", ""))
+            path = _resolve_and_validate_path(self._sandbox, request.arguments.get("path", ""))
         except ValueError as e:
             return ToolResult.failure(
                 request.request_id,
@@ -163,7 +182,7 @@ class WriteFileTool(Tool):
 
     def _execute(self, request: ToolRequest) -> ToolResult:
         try:
-            path = validate_sandbox_path(request.arguments.get("path", ""))
+            path = _resolve_and_validate_path(self._sandbox, request.arguments.get("path", ""))
         except ValueError as e:
             return ToolResult.failure(
                 request.request_id,
@@ -234,8 +253,8 @@ class MoveFileTool(Tool):
 
     def _execute(self, request: ToolRequest) -> ToolResult:
         try:
-            source = validate_sandbox_path(request.arguments.get("source", ""))
-            destination = validate_sandbox_path(request.arguments.get("destination", ""))
+            source = _resolve_and_validate_path(self._sandbox, request.arguments.get("source", ""))
+            destination = _resolve_and_validate_path(self._sandbox, request.arguments.get("destination", ""))
         except ValueError as e:
             return ToolResult.failure(
                 request.request_id,
@@ -297,7 +316,7 @@ class DeleteFileTool(Tool):
 
     def _execute(self, request: ToolRequest) -> ToolResult:
         try:
-            path = validate_sandbox_path(request.arguments.get("path", ""))
+            path = _resolve_and_validate_path(self._sandbox, request.arguments.get("path", ""))
         except ValueError as e:
             return ToolResult.failure(
                 request.request_id,

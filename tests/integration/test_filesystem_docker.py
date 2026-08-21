@@ -94,3 +94,29 @@ def test_filesystem_path_traversal_integration(sandbox):
     res = read_tool._execute(req)
     assert res.status == ToolResultStatus.INVALID_REQUEST
     assert res.error.code == "invalid_path"
+
+def test_filesystem_symlink_escape_integration(sandbox):
+    # Setup a symlink inside the workspace pointing to /etc
+    sandbox.execute(["ln", "-s", "/etc", "/workspace/symlink"], timeout_seconds=10)
+    
+    # Try to read /etc/passwd through the symlink
+    read_tool = ReadFileTool(sandbox)
+    req = ToolRequest(
+        tool_name="read_file", capability="filesystem.read",
+        arguments={"path": "/workspace/symlink/passwd"}
+    )
+    res = read_tool._execute(req)
+    assert res.status == ToolResultStatus.INVALID_REQUEST
+    assert res.error.code == "invalid_path"
+    assert "resolves outside sandbox boundaries" in res.error.message
+
+    # Try to write to /etc/evil through the symlink
+    write_tool = WriteFileTool(sandbox)
+    req = ToolRequest(
+        tool_name="write_file", capability="filesystem.write",
+        arguments={"path": "/workspace/symlink/evil", "content": "bad"}
+    )
+    res = write_tool._execute(req)
+    assert res.status == ToolResultStatus.INVALID_REQUEST
+    assert res.error.code == "invalid_path"
+    assert "resolves outside sandbox boundaries" in res.error.message

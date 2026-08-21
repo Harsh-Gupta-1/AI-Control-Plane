@@ -89,8 +89,10 @@ def test_agent_loop_approval_workflow():
     
     # We use a tool that requires APPROVE
     policy = CapabilityPolicyGate({"cap": PolicyDecision.APPROVE})
-    dispatcher = ToolDispatcher(registry, policy)
     approval_store = InMemoryApprovalStore()
+    from control_plane.approval.in_memory import DefaultApprovalAuthorizer
+    authorizer = DefaultApprovalAuthorizer(approval_store)
+    dispatcher = ToolDispatcher(registry, policy, authorizer=authorizer)
     
     req = ToolRequest("nonexistent", "cap", {}, "req1")
     
@@ -135,8 +137,10 @@ def test_agent_loop_approval_rejection():
     registry = ToolRegistry()
     
     policy = CapabilityPolicyGate({"cap": PolicyDecision.APPROVE})
-    dispatcher = ToolDispatcher(registry, policy)
     approval_store = InMemoryApprovalStore()
+    from control_plane.approval.in_memory import DefaultApprovalAuthorizer
+    authorizer = DefaultApprovalAuthorizer(approval_store)
+    dispatcher = ToolDispatcher(registry, policy, authorizer=authorizer)
     
     req = ToolRequest("nonexistent", "cap", {}, "req1")
     

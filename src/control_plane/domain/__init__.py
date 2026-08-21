@@ -15,6 +15,7 @@ from .models import (
     ApprovalStatus,
     ApprovalRequest,
     ApprovalDecision,
+    ApprovalGrant,
     FailureCategory,
 )
 
@@ -33,5 +34,6 @@ __all__ = [
     "ApprovalStatus",
     "ApprovalRequest",
     "ApprovalDecision",
+    "ApprovalGrant",
     "FailureCategory",
 ]

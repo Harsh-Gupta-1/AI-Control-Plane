@@ -2,7 +2,7 @@
 
 import unittest
 
-from control_plane.domain import ToolRequest, ToolResultStatus
+from control_plane.domain import ToolRequest, ToolResultStatus, ApprovalGrant, ApprovalStatus
 from control_plane.policy import AllowListedPolicyGate, CapabilityPolicyGate, PolicyDecision
 from control_plane.tools import DuplicateToolError, ToolDispatcher, ToolNotFoundError, ToolRegistry
 from tests.unit.fake_tools import FailingTool, RecordingTool
@@ -144,13 +144,30 @@ class ToolDispatcherTests(unittest.TestCase):
         self.assertEqual(self.tool.execution_count, 0)
         
     def test_executes_approved_request(self) -> None:
+        from control_plane.approval.in_memory import InMemoryApprovalStore, DefaultApprovalAuthorizer
+        from control_plane.domain.models import ApprovalRequest, ApprovalDecision
+        store = InMemoryApprovalStore()
+        authorizer = DefaultApprovalAuthorizer(store)
         dispatcher = ToolDispatcher(
             self.registry,
-            CapabilityPolicyGate({"test.read": PolicyDecision.APPROVE})
+            CapabilityPolicyGate({"test.read": PolicyDecision.APPROVE}),
+            authorizer=authorizer
         )
+        req = ToolRequest("fake_read_tool", "test.read", {"value": "hello"})
+        store.create_request(ApprovalRequest(
+            approval_id="app-1",
+            task_id="task-1",
+            request_id=req.request_id,
+            tool_name="fake_read_tool",
+            capability="test.read",
+            arguments={"value": "hello"},
+            reason="Test"
+        ))
+        store.resolve(ApprovalDecision("app-1", True))
+        
         result = dispatcher.dispatch(
-            ToolRequest("fake_read_tool", "test.read", {"value": "hello"}),
-            approved_request_id="some-approval-id"
+            req,
+            approval_id="app-1"
         )
         self.assertEqual(result.status, ToolResultStatus.SUCCESS)
         self.assertEqual(self.tool.execution_count, 1)

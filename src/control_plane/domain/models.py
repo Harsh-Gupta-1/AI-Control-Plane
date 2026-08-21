@@ -164,6 +164,15 @@ class ApprovalDecision:
     approved: bool
     reason: str = ""
 
+@dataclass
+class ApprovalGrant:
+    """A cryptographic or structural proof that a specific request was approved."""
+    approval_id: str
+    request_id: str
+    capability: str
+    arguments_hash: str
+    status: ApprovalStatus
+
 class FailureCategory(str, Enum):
     TOOL_FAILURE = "tool_failure"          # Tool returned error
     ENVIRONMENT_FAILURE = "environment_failure"  # Sandbox/Docker failure

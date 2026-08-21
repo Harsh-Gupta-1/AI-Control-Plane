@@ -11,11 +11,12 @@ from control_plane.tools.registry import ToolNotFoundError, ToolRegistry
 class ToolDispatcher:
     """Validates, authorizes, resolves, and executes a structured request."""
 
-    def __init__(self, registry: ToolRegistry, policy_gate: PolicyGate) -> None:
+    def __init__(self, registry: ToolRegistry, policy_gate: PolicyGate, authorizer=None) -> None:
         self._registry = registry
         self._policy_gate = policy_gate
+        self._authorizer = authorizer
 
-    def dispatch(self, request: object, approved_request_id: str | None = None) -> ToolResult:
+    def dispatch(self, request: object, approval_id: str | None = None) -> ToolResult:
         """Return a structured result; never execute an invalid or blocked request."""
         validation_error = self._validate_request(request)
         if validation_error is not None:
@@ -25,14 +26,24 @@ class ToolDispatcher:
         policy_result = self._policy_gate.evaluate(request)
         
         if policy_result.decision is PolicyDecision.APPROVE:
-            if approved_request_id is None:
+            if not self._authorizer:
+                return ToolResult.failure(
+                    request.request_id, ToolResultStatus.BLOCKED, "approval_required", policy_result.reason
+                )
+            
+            if approval_id is None:
                 return ToolResult.failure(
                     request.request_id,
                     ToolResultStatus.BLOCKED,
                     "approval_required",
                     policy_result.reason,
                 )
-            # Verified: this request was explicitly approved (verified by AgentLoop)
+            
+            # Structurally verify the approval grant against the incoming request via authoritative boundary
+            if not self._authorizer.authorize(request, approval_id):
+                return ToolResult.failure(request.request_id, ToolResultStatus.BLOCKED, "forged_grant", "Invalid or forged approval.")
+            
+            # Verified: this request was explicitly approved
             
         elif policy_result.decision is PolicyDecision.BLOCK:
             return ToolResult.failure(
@@ -43,7 +54,7 @@ class ToolDispatcher:
             )
 
         try:
-            tool = self._registry._resolve(request.tool_name)
+            tool = self._registry.resolve_tool(request.tool_name)
         except ToolNotFoundError:
             return ToolResult.failure(
                 request.request_id,
@@ -136,3 +147,7 @@ class ToolDispatcher:
                 f"missing required arguments: {', '.join(missing)}",
             )
         return None
+
+    def available_tools(self):
+        """Return the metadata for all available tools in the registry."""
+        return self._registry.available_tools()

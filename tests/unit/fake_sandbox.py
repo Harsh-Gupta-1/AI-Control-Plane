@@ -22,6 +22,9 @@ class FakeSandbox(Sandbox):
         return SandboxState.RUNNING
 
     def execute(self, command: list[str], timeout_seconds: int, max_output_bytes: int = 1048576) -> SandboxResult:
+        if command and command[0] == "realpath":
+            return SandboxResult(exit_code=0, stdout=command[-1], stderr="", timed_out=False, output_truncated=False)
+            
         if not self._results:
             raise RuntimeError("FakeSandbox exhausted its preconfigured results")
         return self._results.pop(0)

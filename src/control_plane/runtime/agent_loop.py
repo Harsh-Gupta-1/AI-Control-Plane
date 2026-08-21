@@ -3,7 +3,7 @@ from uuid import uuid4
 from typing import Any
 
 from control_plane.domain import (
-    ActionRequest, Observation, Task, TaskState, Plan, PlanStep, ToolResultStatus, ApprovalRequest, ApprovalDecision
+    ActionRequest, Observation, Task, TaskState, Plan, PlanStep, ToolResultStatus, ApprovalRequest, ApprovalDecision, ApprovalGrant
 )
 from control_plane.llm.contracts import AgentContext, LLMProvider, ProposalAction
 from control_plane.runtime.task_runtime import TaskRuntime
@@ -74,6 +74,16 @@ class AgentLoop:
                 ))
             except Exception as e:
                 logger.error(f"Failed to emit trace: {e}")
+                # Hardening fix: Do not swallow trace failure silently. Record it as an Observation.
+                try:
+                    self._runtime.record_observation(task_id, Observation(
+                        observation_id=str(uuid4()),
+                        source="trace_system",
+                        content=f"Warning: Telemetry trace emission failed: {str(e)}",
+                        data={"event_type": event_type.value}
+                    ))
+                except Exception:
+                    pass # Ignore if recording observation also fails (e.g. task terminal)
         
     def _save_checkpoint(self, task: Task, iterations: int, failures: int) -> None:
         if not self._checkpoint_store:
@@ -91,20 +101,18 @@ class AgentLoop:
         self._checkpoint_store.save(task.task_id, checkpoint)
         self._emit_trace(TraceEventType.CHECKPOINT_SAVED, task.task_id, iteration=iterations, consecutive_failures=failures)
         
-    def _wait_for_approval(self, approval_id: str) -> ApprovalDecision:
-        """Poll the approval store until resolved (MVP sync block)."""
+    def _wait_for_approval(self, approval_id: str) -> ApprovalGrant | None:
+        """Wait for the approval store to resolve the request (MVP sync block without busy-waiting)."""
         if not self._approval_store:
             # Fallback if no store provided: instantly reject
-            return ApprovalDecision(approval_id=approval_id, approved=False, reason="No approval store configured")
+            return None
             
-        import time
-        while True:
-            req = self._approval_store.get_request(approval_id)
-            if req.status == "approved":
-                return ApprovalDecision(approval_id=approval_id, approved=True, reason="Human approved")
-            elif req.status == "rejected":
-                return ApprovalDecision(approval_id=approval_id, approved=False, reason="Human rejected")
-            time.sleep(0.5)
+        # We wait for up to 300 seconds for a human to resolve the request
+        req = self._approval_store.wait_for_resolution(approval_id, timeout_seconds=300)
+        
+        if req.status == "approved":
+            return self._approval_store.get_grant(approval_id)
+        return None
         
     def run(self, task_id: str, resume: bool = False) -> Task:
         """Execute the agent loop for a task until completion or failure."""
@@ -118,9 +126,9 @@ class AgentLoop:
             if ckpt:
                 iterations = ckpt.iteration_count
                 consecutive_failures = ckpt.consecutive_failures
-                # The runtime should ideally be restored from the checkpoint too,
-                # but for this MVP, we assume runtime state was rehydrated before calling run()
-                # or we just rely on the current runtime's state.
+                # Hardening fix: actually restore the task into the runtime
+                # so a new AgentLoop can pick up exactly where it left off.
+                task = self._runtime.restore_task(ckpt.task)
         
         if task.state == TaskState.PENDING:
             task = self._runtime.transition_task(task_id, TaskState.PLANNING)
@@ -161,7 +169,7 @@ class AgentLoop:
                     current_step = "All planned steps completed"
                     
             available_tools = []
-            for tool_meta in self._dispatcher._registry.available_tools():
+            for tool_meta in self._dispatcher.available_tools():
                 available_tools.append({
                     "name": tool_meta.name,
                     "description": tool_meta.description,
@@ -272,15 +280,15 @@ class AgentLoop:
                         self._save_checkpoint(task, iterations, consecutive_failures)
                         task = self._runtime.transition_task(task_id, TaskState.WAITING_FOR_APPROVAL)
                         self._emit_trace(TraceEventType.TASK_STATE_CHANGED, task_id, new_state=TaskState.WAITING_FOR_APPROVAL.value)
-                        decision = self._wait_for_approval(approval.approval_id)
-                        self._emit_trace(TraceEventType.APPROVAL_RESOLVED, task_id, approved=decision.approved)
+                        grant = self._wait_for_approval(approval.approval_id)
+                        self._emit_trace(TraceEventType.APPROVAL_RESOLVED, task_id, approved=grant is not None)
                         
                         task = self._runtime.transition_task(task_id, TaskState.RUNNING)
                         self._emit_trace(TraceEventType.TASK_STATE_CHANGED, task_id, new_state=TaskState.RUNNING.value)
                         
-                        if decision.approved:
+                        if grant:
                             self._emit_trace(TraceEventType.TOOL_INVOKED, task_id, tool_name=req.tool_name)
-                            result = self._dispatcher.dispatch(req, approved_request_id=approval.approval_id)
+                            result = self._dispatcher.dispatch(req, approval_id=grant.approval_id)
                             self._emit_trace(TraceEventType.TOOL_RESULT, task_id, status=result.status.value, tool_name=req.tool_name)
                         else:
                             obs_content = f"status=blocked error=approval_rejected:Request was rejected"

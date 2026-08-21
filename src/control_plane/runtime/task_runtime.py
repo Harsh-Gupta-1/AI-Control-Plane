@@ -63,6 +63,14 @@ class TaskRuntime:
         self._tasks[task.task_id] = task
         return deepcopy(task)
 
+    def restore_task(self, task: Task) -> Task:
+        """Restore a task directly into the runtime's canonical state from a checkpoint."""
+        # We do not validate transitions here, as the task is being forcibly rehydrated
+        # into the exact state it was saved in.
+        canonical_task = deepcopy(task)
+        self._tasks[canonical_task.task_id] = canonical_task
+        return deepcopy(canonical_task)
+
     def get_task(self, task_id: str) -> Task:
         """Return a detached snapshot of the current canonical task state."""
         return deepcopy(self._get_canonical_task(task_id))
