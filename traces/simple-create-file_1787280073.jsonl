@@ -1,2 +1,0 @@
-{"event_id": "2a4a22d7-2573-4f53-883c-7b7d30ecbb60", "event_type": "task_state_changed", "task_id": "89896a05-c0dc-4c2e-9152-68bba222047d", "action_id": null, "parent_event_id": null, "timestamp": "2026-08-21T02:41:13.309000+00:00", "payload": {"new_state": "planning"}}
-{"event_id": "86090a3c-951a-4dd1-8bf1-f09b2ea1698e", "event_type": "task_failed", "task_id": "89896a05-c0dc-4c2e-9152-68bba222047d", "action_id": null, "parent_event_id": null, "timestamp": "2026-08-21T02:41:13.309523+00:00", "payload": {"reason": "LLM Error: 'AgentContext' object has no attribute 'task'"}}
