@@ -30,7 +30,7 @@ WORKSPACE_PATHS = [
 class DockerSandbox(Sandbox):
     """A disposable Docker container providing an isolated computer environment."""
 
-    def __init__(self, image: str = "ubuntu:22.04") -> None:
+    def __init__(self, image: str = "control-plane-sandbox:latest") -> None:
         """Initialize the Docker sandbox.
 
         This creates the container but does not start it.

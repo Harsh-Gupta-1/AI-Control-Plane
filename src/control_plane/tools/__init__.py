@@ -11,8 +11,20 @@ from .filesystem import (
     DeleteFileTool
 )
 from .terminal import ExecuteCommandTool
+from .browser import (
+    BrowserNavigateTool,
+    BrowserExtractTool,
+    BrowserDownloadTool,
+    BrowserClickTool,
+    BrowserTypeTool,
+)
 
 __all__ = [
+    "BrowserClickTool",
+    "BrowserDownloadTool",
+    "BrowserExtractTool",
+    "BrowserNavigateTool",
+    "BrowserTypeTool",
     "DeleteFileTool",
     "DuplicateToolError",
     "ExecuteCommandTool",
@@ -27,3 +39,4 @@ __all__ = [
     "ToolRegistry",
     "WriteFileTool",
 ]
+
