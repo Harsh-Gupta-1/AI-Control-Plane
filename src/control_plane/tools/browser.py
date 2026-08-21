@@ -14,102 +14,101 @@ def _is_valid_http_url(url: str) -> bool:
         return False
 
 # A lightweight stateful browser runner injected on demand
-PLAYWRIGHT_SCRIPT = """
+DAEMON_SCRIPT = """
 import sys, json, os
-
+from http.server import BaseHTTPRequestHandler, HTTPServer
 try:
     from playwright.sync_api import sync_playwright
 except ImportError:
-    print(json.dumps({"error": "Playwright is not installed in the sandbox. Hardening requirement failed."}))
+    print("Playwright not installed")
     sys.exit(0)
 
 STATE_FILE = "/workspace/browser_state.json"
-URL_FILE = "/workspace/current_url.txt"
 
-def get_current_url():
-    if os.path.exists(URL_FILE):
-        with open(URL_FILE, "r") as f:
-            return f.read().strip()
-    return ""
+p = sync_playwright().start()
+browser = p.chromium.launch(headless=True)
+context = browser.new_context(storage_state=STATE_FILE if os.path.exists(STATE_FILE) else None)
+page = context.new_page()
 
-def set_current_url(url):
-    with open(URL_FILE, "w") as f:
-        f.write(url)
-
-def run():
-    payload = json.load(sys.stdin)
-    cmd = payload.get("cmd")
-    args = payload.get("args", {})
-    
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
-        context = browser.new_context(storage_state=STATE_FILE if os.path.exists(STATE_FILE) else None)
-        page = context.new_page()
+class RequestHandler(BaseHTTPRequestHandler):
+    def log_message(self, format, *args):
+        pass
         
+    def do_GET(self):
+        if self.path == '/ping':
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b'pong')
+            
+    def do_POST(self):
+        content_length = int(self.headers['Content-Length'])
+        post_data = self.rfile.read(content_length)
+        payload = json.loads(post_data)
+        
+        cmd = payload.get("cmd")
+        args = payload.get("args", {})
+        
+        result = {}
         try:
             if cmd == 'navigate':
-                url = args['url']
-                resp = page.goto(url, wait_until='domcontentloaded', timeout=15000)
-                set_current_url(page.url)
+                resp = page.goto(args['url'], wait_until='domcontentloaded', timeout=15000)
                 context.storage_state(path=STATE_FILE)
-                return {'url': page.url, 'status_code': resp.status if resp else -1, 'title': page.title()}
+                result = {'url': page.url, 'status_code': resp.status if resp else -1, 'title': page.title()}
                 
             elif cmd == 'extract':
-                url = args.get('url') or get_current_url()
-                if not url: return {'error': 'No URL provided or active'}
-                page.goto(url, wait_until='domcontentloaded', timeout=15000)
+                url = args.get('url')
+                if url and url != page.url and url != "about:blank":
+                    page.goto(url, wait_until='domcontentloaded', timeout=15000)
                 text = page.locator('body').inner_text()
-                set_current_url(page.url)
-                context.storage_state(path=STATE_FILE)
-                return {'url': page.url, 'content': text[:args.get('max_length', 51200)]}
+                result = {'url': page.url, 'content': text[:args.get('max_length', 51200)]}
                 
             elif cmd == 'click':
-                url = get_current_url()
-                if not url: return {'error': 'No active URL'}
-                page.goto(url, wait_until='domcontentloaded', timeout=15000)
                 page.locator(args['selector']).click(timeout=5000)
-                try:
-                    page.wait_for_load_state('domcontentloaded', timeout=3000)
-                except:
-                    pass
-                set_current_url(page.url)
+                try: page.wait_for_load_state('domcontentloaded', timeout=3000)
+                except: pass
                 context.storage_state(path=STATE_FILE)
-                return {'success': True, 'url': page.url}
+                result = {'success': True, 'url': page.url}
                 
             elif cmd == 'type':
-                url = get_current_url()
-                if not url: return {'error': 'No active URL'}
-                page.goto(url, wait_until='domcontentloaded', timeout=15000)
                 page.locator(args['selector']).fill(args['text'], timeout=5000)
-                try:
-                    page.wait_for_load_state('domcontentloaded', timeout=3000)
-                except:
-                    pass
-                set_current_url(page.url)
+                try: page.wait_for_load_state('domcontentloaded', timeout=3000)
+                except: pass
                 context.storage_state(path=STATE_FILE)
-                return {'success': True, 'url': page.url}
+                result = {'success': True, 'url': page.url}
                 
+            else:
+                result = {'error': f'Unknown cmd: {cmd}'}
         except Exception as e:
-            return {'error': str(e)}
-        finally:
-            browser.close()
+            result = {'error': str(e)}
+            
+        self.send_response(200)
+        self.send_header('Content-Type', 'application/json')
+        self.end_headers()
+        self.wfile.write(json.dumps(result).encode('utf-8'))
 
-if __name__ == '__main__':
-    print(json.dumps(run()))
+httpd = HTTPServer(('127.0.0.1', 9222), RequestHandler)
+httpd.serve_forever()
 """
 
 def _execute_playwright(sandbox: Sandbox, cmd: str, args: dict[str, Any], timeout: int = 30) -> ToolResult:
     import base64
-    script_b64 = base64.b64encode(PLAYWRIGHT_SCRIPT.encode("utf-8")).decode("utf-8")
+    script_b64 = base64.b64encode(DAEMON_SCRIPT.encode("utf-8")).decode("utf-8")
     payload_b64 = base64.b64encode(json.dumps({"cmd": cmd, "args": args}).encode("utf-8")).decode("utf-8")
     
     # We write the decoded script to a temporary file and pass the base64-decoded payload via stdin.
     # This guarantees no untrusted shell interpolation occurs.
-    command = [
-        "bash", 
-        "-c", 
-        f"echo '{script_b64}' | base64 -d > /tmp/browser_script.py && echo '{payload_b64}' | base64 -d | python3 /tmp/browser_script.py"
-    ]
+    bash_script = (
+        f"if ! curl -s http://127.0.0.1:9222/ping > /dev/null; then "
+        f"mkdir -p /workspace/.pids && "
+        f"echo '{script_b64}' | base64 -d > /tmp/browser_daemon.py && "
+        f"nohup python3 /tmp/browser_daemon.py > /workspace/.pids/browser.out 2>&1 & "
+        f"for i in 1 2 3 4 5; do curl -s http://127.0.0.1:9222/ping > /dev/null && break || sleep 1; done; "
+        f"fi && "
+        f"echo '{payload_b64}' | base64 -d > /tmp/payload.json && "
+        f"curl -s -X POST -H 'Content-Type: application/json' -d @/tmp/payload.json http://127.0.0.1:9222/"
+    )
+    
+    command = ["bash", "-c", bash_script]
     result = sandbox.execute(command, timeout_seconds=timeout)
     
     if result.exit_code != 0 or result.timed_out:
