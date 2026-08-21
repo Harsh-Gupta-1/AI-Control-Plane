@@ -48,3 +48,6 @@ class FakeSandbox(Sandbox):
         if not self._results:
             raise RuntimeError("FakeSandbox exhausted its preconfigured results")
         return self._results.pop(0)
+        
+    def extract_file(self, sandbox_path: str, local_path: str) -> None:
+        pass

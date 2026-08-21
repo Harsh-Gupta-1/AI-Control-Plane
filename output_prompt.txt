@@ -1,0 +1,157 @@
+<USER_REQUEST>
+# FINAL POST-M10 IMPLEMENTATION PLAN
+
+# AI COMPUTER CONTROL PLANE → PERSISTENT AI COMPUTER
+
+The M0–M10 MVP is complete and frozen.
+
+The next phase is the final major product expansion.
+
+The goal is NOT to add random agent features.
+
+The goal is to transform the current system from:
+
+> **An autonomous agent that performs bounded tasks inside a disposable Docker sandbox**
+
+into:
+
+> **A persistent, recoverable, sandboxed AI computer that an LLM can operate over multiple tasks while the Control Plane retains complete execution authority.**
+
+This distinction is critical.
+
+The project must remain:
+
+```text
+LLM = reasoning
+Control Plane = authority/governance
+Computer = sandboxed execution environment
+```
+
+The LLM must remain untrusted.
+
+Making the computer persistent and more capable must NEVER give the LLM direct execution authority.
+
+---
+
+# 1. READ THE EXISTING PROJECT FIRST
+
+Before making ANY changes:
+
+Read:
+
+* `AGENTS.md`
+* `docs/architecture.md`
+* `docs/mvp.md`
+* `docs/implementation-plan.md` if present
+* the complete source tree
+* the complete test suite
+* the current CLI
+* the current sandbox implementation
+* the current dispatcher
+* the current policy engine
+* approval implementation
+* checkpoint implementation
+* snapshot/rollback implementation
+* browser implementation
+* filesystem tools
+* terminal tools
+* current evaluation tasks
+
+Understand the ACTUAL implementation.
+
+Do not assume the existing documentation perfectly matches the code.
+
+Do not redesign working M0–M10 components without a concrete reason.
+
+---
+
+# 2. CURRENT SYSTEM
+
+The current architecture is:
+
+```text id="d0jvcc"
+USER
+ ↓
+LLM / AGENT
+ ↓
+CONTROL PLANE
+ ├── Runtime
+ ├── Dispatcher
+ ├── Policy
+ ├── Approval
+ ├── Verification
+ ├── Recovery
+ ├── Checkpointing
+ └── Tracing
+ ↓
+REGISTERED TOOLS
+ ↓
+DOCKER SANDBOX
+```
+
+The current sandbox is primarily task-oriented and disposable.
+
+The 
+<truncated 20118 bytes>
+ns:
+
+```text id="7mmbij"
+AI reasoning
++
+computer control
++
+governance
++
+persistence
++
+recovery
+```
+
+---
+
+# FINAL SELF-REVIEW
+
+After the implementation is complete:
+
+Report:
+
+1. Every file changed.
+2. Every new interface.
+3. Computer lifecycle design.
+4. Task/computer/artifact lifecycle separation.
+5. Artifact persistence mechanism.
+6. Process/service management design.
+7. Browser persistence design.
+8. Snapshot/rollback design.
+9. Fine-grained capability model.
+10. Security boundaries.
+11. Dependencies added and why.
+12. Unit test results.
+13. Docker integration test results.
+14. End-to-end flagship scenario results.
+15. Exact measurable statistics that were actually collected.
+16. Remaining limitations.
+17. Technical debt.
+18. Architectural deviations.
+19. Confirmation that no host filesystem bypass exists.
+20. Confirmation that the LLM never receives direct execution authority.
+21. Whether the project is now ready to be frozen as the final flagship version.
+
+Do not begin another major feature phase after this.
+
+STOP after the final review.  After each step i want to commit do not jsut do everythign in a single step
+
+</USER_REQUEST>
+<ADDITIONAL_METADATA>
+The current local time is: 2026-08-21T18:41:42+05:30.
+
+The user's current state is as follows:
+Active Document: c:\Users\Harsh Gupta\Desktop\Projects\Control_Plane\trace.jsonl (LANGUAGE_JSON)
+Cursor is on line: 1
+Other open documents:
+- c:\Users\Harsh Gupta\Desktop\Projects\Control_Plane\src\control_plane\sandbox\docker_sandbox.py (LANGUAGE_PYTHON)
+- c:\Users\Harsh Gupta\Desktop\Projects\Control_Plane\src\control_plane\llm\groq_provider.py (LANGUAGE_PYTHON)
+- c:\Users\Harsh Gupta\Desktop\Projects\Control_Plane\src\control_plane\llm\ollama_provider.py (LANGUAGE_PYTHON)
+- c:\Users\Harsh Gupta\Desktop\Projects\Control_Plane\tests\integration\test_m12_capabilities.py (LANGUAGE_PYTHON)
+- c:\Users\Harsh Gupta\Desktop\Projects\Control_Plane\tests\integration\test_m11_long_running.py (LANGUAGE_PYTHON)
+</ADDITIONAL_METADATA>

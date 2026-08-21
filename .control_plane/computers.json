@@ -1,0 +1,34 @@
+{
+  "36c2e179-935a-4a48-981b-8a8dca00d298": {
+    "id": "36c2e179-935a-4a48-981b-8a8dca00d298",
+    "status": "running",
+    "sandbox_id": "f384f5b8-b78f-4008-8b9e-94bc1c632ee7",
+    "created_at": "2026-08-21T13:28:25.204557+00:00",
+    "last_active_at": "2026-08-21T13:28:25.767234+00:00",
+    "metadata": {}
+  },
+  "86f4079c-b2d5-43f5-8949-2df8dff82c6e": {
+    "id": "86f4079c-b2d5-43f5-8949-2df8dff82c6e",
+    "status": "running",
+    "sandbox_id": "c2751574-d4a5-477a-b2cf-24f689d1ea9d",
+    "created_at": "2026-08-21T13:40:22.657536+00:00",
+    "last_active_at": "2026-08-21T13:40:23.266345+00:00",
+    "metadata": {}
+  },
+  "b25e5292-e3fa-4f5c-8396-3a9781e75a82": {
+    "id": "b25e5292-e3fa-4f5c-8396-3a9781e75a82",
+    "status": "running",
+    "sandbox_id": "c711c793-bb71-42c0-9e4b-573438497bd6",
+    "created_at": "2026-08-21T13:41:59.373384+00:00",
+    "last_active_at": "2026-08-21T13:41:59.858907+00:00",
+    "metadata": {}
+  },
+  "7331e6fb-299b-49ba-a962-b6fc9a3427b5": {
+    "id": "7331e6fb-299b-49ba-a962-b6fc9a3427b5",
+    "status": "running",
+    "sandbox_id": "7095e62b-2c63-4d7d-b30a-4afc5e52ad4b",
+    "created_at": "2026-08-21T13:52:33.376165+00:00",
+    "last_active_at": "2026-08-21T13:52:33.879762+00:00",
+    "metadata": {}
+  }
+}
