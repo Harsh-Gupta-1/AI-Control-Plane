@@ -10,7 +10,12 @@ from .filesystem import (
     MoveFileTool, 
     DeleteFileTool
 )
-from .terminal import ExecuteCommandTool
+from .terminal import (
+    ExecuteCommandTool,
+    ExecuteBackgroundCommandTool,
+    GetBackgroundCommandStatusTool,
+    StopBackgroundCommandTool,
+)
 from .browser import (
     BrowserNavigateTool,
     BrowserExtractTool,
@@ -27,10 +32,13 @@ __all__ = [
     "BrowserTypeTool",
     "DeleteFileTool",
     "DuplicateToolError",
+    "ExecuteBackgroundCommandTool",
     "ExecuteCommandTool",
+    "GetBackgroundCommandStatusTool",
     "ListDirectoryTool",
     "MoveFileTool",
     "ReadFileTool",
+    "StopBackgroundCommandTool",
     "Tool",
     "ToolDispatcher",
     "ToolInputSchema",

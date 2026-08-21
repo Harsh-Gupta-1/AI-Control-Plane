@@ -114,3 +114,36 @@ class Sandbox(ABC):
 
         Raises SandboxError if the file cannot be extracted.
         """
+
+    @abstractmethod
+    def execute_background(self, command: list[str]) -> str:
+        """Start a command in the background and return a unique background ID.
+        
+        Args:
+            command: The command and its arguments.
+            
+        Returns:
+            A unique background ID representing the running process.
+        """
+
+    @abstractmethod
+    def get_background_status(self, bg_id: str) -> dict:
+        """Get the status of a background command.
+        
+        Args:
+            bg_id: The background ID returned by execute_background.
+            
+        Returns:
+            A dict containing:
+            - status (str): 'running' or 'stopped'
+            - stdout (str): recent standard output (tail)
+            - stderr (str): recent standard error (tail)
+        """
+
+    @abstractmethod
+    def stop_background(self, bg_id: str) -> None:
+        """Stop a running background command.
+        
+        Args:
+            bg_id: The background ID returned by execute_background.
+        """

@@ -41,7 +41,12 @@ class EvaluationRunner:
                 sandbox.execute(["sh", "-c", setup_cmd["command"]])
                 
         from control_plane.tools.filesystem import WriteFileTool, ReadFileTool, DeleteFileTool
-        from control_plane.tools.terminal import ExecuteCommandTool
+        from control_plane.tools.terminal import (
+            ExecuteCommandTool,
+            ExecuteBackgroundCommandTool,
+            GetBackgroundCommandStatusTool,
+            StopBackgroundCommandTool,
+        )
         from control_plane.tools.browser import BrowserNavigateTool, BrowserDownloadTool, BrowserExtractTool, BrowserClickTool, BrowserTypeTool
         
         registry = ToolRegistry()
@@ -49,6 +54,9 @@ class EvaluationRunner:
         registry.register(ReadFileTool(sandbox))
         registry.register(DeleteFileTool(sandbox))
         registry.register(ExecuteCommandTool(sandbox))
+        registry.register(ExecuteBackgroundCommandTool(sandbox))
+        registry.register(GetBackgroundCommandStatusTool(sandbox))
+        registry.register(StopBackgroundCommandTool(sandbox))
         registry.register(BrowserNavigateTool(sandbox))
         registry.register(BrowserDownloadTool(sandbox))
         registry.register(BrowserExtractTool(sandbox))

@@ -51,3 +51,12 @@ class FakeSandbox(Sandbox):
         
     def extract_file(self, sandbox_path: str, local_path: str) -> None:
         pass
+
+    def execute_background(self, command: list[str]) -> str:
+        return "fake_bg_id"
+
+    def get_background_status(self, bg_id: str) -> dict:
+        return {"status": "stopped", "stdout": "", "stderr": ""}
+
+    def stop_background(self, bg_id: str) -> None:
+        pass

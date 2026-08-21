@@ -289,8 +289,18 @@ def main(argv=None):
             # We would register real tools here if requested, 
             # but for demo we can just stick to simple filesystem tools.
             from control_plane.tools.filesystem import WriteFileTool, ReadFileTool
+            from control_plane.tools.terminal import (
+                ExecuteCommandTool,
+                ExecuteBackgroundCommandTool,
+                GetBackgroundCommandStatusTool,
+                StopBackgroundCommandTool,
+            )
             registry.register(WriteFileTool(sandbox))
             registry.register(ReadFileTool(sandbox))
+            registry.register(ExecuteCommandTool(sandbox))
+            registry.register(ExecuteBackgroundCommandTool(sandbox))
+            registry.register(GetBackgroundCommandStatusTool(sandbox))
+            registry.register(StopBackgroundCommandTool(sandbox))
 
         # 3. Setup Approval
         class DemoApprovalStore(InMemoryApprovalStore):

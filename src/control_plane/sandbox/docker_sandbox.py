@@ -1,8 +1,10 @@
 """Docker-backed implementation of the Sandbox interface."""
 
 import logging
-import uuid
+import os
+import shlex
 import tarfile
+import uuid
 from typing import Any
 
 import docker
@@ -340,3 +342,56 @@ class DockerSandbox(Sandbox):
         finally:
             if os.path.exists(temp_tar_path):
                 os.remove(temp_tar_path)
+
+    def execute_background(self, command: list[str]) -> str:
+        state = self.inspect()
+        if state != SandboxState.RUNNING:
+            raise SandboxError(f"Cannot execute background command; sandbox is in state {state.value}")
+
+        bg_id = str(uuid.uuid4())
+        
+        # We need to make sure the tracking directory exists
+        self.execute(["mkdir", "-p", "/workspace/.pids"], timeout_seconds=10)
+        
+        cmd_str = " ".join(shlex.quote(c) for c in command)
+        # Use nohup to detach and save output, and echo PID to a tracking file
+        wrapper_cmd = f"nohup {cmd_str} > /workspace/.pids/{bg_id}.out 2>&1 & echo $! > /workspace/.pids/{bg_id}.pid"
+        
+        # We execute this small script inside the container
+        res = self.execute(["sh", "-c", wrapper_cmd], timeout_seconds=10)
+        if res.exit_code != 0:
+            raise SandboxError(f"Failed to launch background command: {res.stderr}")
+            
+        return bg_id
+
+    def get_background_status(self, bg_id: str) -> dict:
+        state = self.inspect()
+        if state != SandboxState.RUNNING:
+            return {"status": "stopped", "stdout": "", "stderr": f"Sandbox is {state.value}"}
+            
+        # Check if the process is running
+        check_cmd = f"kill -0 $(cat /workspace/.pids/{bg_id}.pid 2>/dev/null) 2>/dev/null && echo 'running' || echo 'stopped'"
+        res = self.execute(["sh", "-c", check_cmd], timeout_seconds=10)
+        
+        status = res.stdout.strip()
+        if not status:
+            status = "stopped"
+            
+        # Get tail of logs
+        log_res = self.execute(["sh", "-c", f"tail -n 50 /workspace/.pids/{bg_id}.out 2>/dev/null || echo ''"], timeout_seconds=10)
+        stdout = log_res.stdout.strip()
+        
+        return {
+            "status": status,
+            "stdout": stdout,
+            "stderr": "" # Nohup redirects stderr to stdout by default here
+        }
+
+    def stop_background(self, bg_id: str) -> None:
+        state = self.inspect()
+        if state != SandboxState.RUNNING:
+            return
+            
+        # Kill the process and remove tracking files
+        stop_cmd = f"kill -9 $(cat /workspace/.pids/{bg_id}.pid 2>/dev/null) 2>/dev/null || true; rm -f /workspace/.pids/{bg_id}.*"
+        self.execute(["sh", "-c", stop_cmd], timeout_seconds=10)
