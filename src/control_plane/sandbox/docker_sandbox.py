@@ -95,6 +95,23 @@ class DockerSandbox(Sandbox):
         except DockerException as e:
             raise SandboxError(f"Failed to start sandbox {self._id}: {e}") from e
 
+    def attach(self, sandbox_id: str) -> None:
+        try:
+            # We look for a container containing the ID in its name or ID
+            self._container = self._client.containers.get(f"sandbox-{sandbox_id}")
+            self._id = sandbox_id
+            self._container_name = f"sandbox-{self._id}"
+        except NotFound:
+            # Try getting by bare id if it was created differently
+            try:
+                self._container = self._client.containers.get(sandbox_id)
+                self._id = sandbox_id
+                self._container_name = self._container.name
+            except DockerException as e:
+                raise SandboxError(f"Failed to attach to sandbox {sandbox_id}: {e}") from e
+        except DockerException as e:
+            raise SandboxError(f"Failed to attach to sandbox {sandbox_id}: {e}") from e
+
     def stop(self) -> None:
         container = self._get_container()
         try:
@@ -121,6 +138,54 @@ class DockerSandbox(Sandbox):
             raise SandboxError(f"Failed to destroy sandbox {self._id}: {e}") from e
         finally:
             self._client.close()
+
+    def snapshot(self) -> str:
+        container = self._get_container()
+        state = self.inspect()
+        if state != SandboxState.RUNNING:
+            raise SandboxError(f"Cannot snapshot sandbox in state {state.value}")
+            
+        snapshot_id = str(uuid.uuid4())
+        repo_name = f"sandbox-snapshot-{self._id}"
+        
+        try:
+            container.commit(repository=repo_name, tag=snapshot_id)
+            return snapshot_id
+        except DockerException as e:
+            raise SandboxError(f"Failed to snapshot sandbox {self._id}: {e}") from e
+
+    def rollback(self, snapshot_id: str) -> None:
+        if self._container is None:
+            raise SandboxError("Cannot rollback a destroyed sandbox.")
+            
+        repo_name = f"sandbox-snapshot-{self._id}"
+        image_tag = f"{repo_name}:{snapshot_id}"
+        
+        try:
+            self._client.images.get(image_tag)
+        except docker.errors.ImageNotFound:
+            raise SandboxError(f"Snapshot {snapshot_id} not found.")
+            
+        # Stop and destroy the current container
+        self.stop()
+        self.destroy()
+        
+        # Recreate the container from the snapshot
+        try:
+            self._client = docker.from_env()
+            self._container = self._client.containers.create(
+                image_tag,
+                command=["tail", "-f", "/dev/null"],
+                name=self._container_name,
+                detach=True,
+                network_mode="bridge",
+                volumes=None,
+                working_dir="/workspace",
+            )
+            # We must start the recreated container
+            self._container.start()
+        except DockerException as e:
+            raise SandboxError(f"Failed to rollback sandbox {self._id}: {e}") from e
 
     def inspect(self) -> SandboxState:
         if self._container is None:

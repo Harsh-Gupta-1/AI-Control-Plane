@@ -45,6 +45,13 @@ class Sandbox(ABC):
         """
 
     @abstractmethod
+    def attach(self, sandbox_id: str) -> None:
+        """Attach to an existing sandbox environment.
+
+        Raises SandboxError if the sandbox cannot be found or attached.
+        """
+
+    @abstractmethod
     def stop(self) -> None:
         """Stop the running sandbox environment.
 
@@ -56,6 +63,23 @@ class Sandbox(ABC):
         """Destroy the sandbox, completely removing its ephemeral state.
 
         Raises SandboxError if destruction fails.
+        """
+
+    @abstractmethod
+    def snapshot(self) -> str:
+        """Create a snapshot of the current sandbox state.
+        
+        Returns:
+            The snapshot ID.
+            
+        Raises SandboxError if snapshotting fails.
+        """
+
+    @abstractmethod
+    def rollback(self, snapshot_id: str) -> None:
+        """Roll back the sandbox to a previously saved snapshot.
+        
+        Raises SandboxError if rollback fails or the snapshot doesn't exist.
         """
 
     @abstractmethod
