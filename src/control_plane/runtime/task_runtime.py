@@ -9,6 +9,7 @@ from uuid import uuid4
 from control_plane.domain import (
     ActionRecord,
     ActionRequest,
+    CapabilityConstraints,
     Observation,
     Plan,
     Task,
@@ -26,14 +27,15 @@ class InvalidTaskTransition(ValueError):
 
 _ALLOWED_TRANSITIONS: dict[TaskState, frozenset[TaskState]] = {
     TaskState.PENDING: frozenset({TaskState.PLANNING, TaskState.CANCELLED}),
-    TaskState.PLANNING: frozenset({TaskState.RUNNING, TaskState.FAILED, TaskState.CANCELLED, TaskState.VERIFYING, TaskState.WAITING_FOR_APPROVAL}),
+    TaskState.PLANNING: frozenset({TaskState.RUNNING, TaskState.FAILED, TaskState.CANCELLED, TaskState.VERIFYING, TaskState.WAITING_FOR_APPROVAL, TaskState.PAUSED}),
     TaskState.RUNNING: frozenset({
         TaskState.COMPLETED, TaskState.FAILED, TaskState.CANCELLED,
-        TaskState.WAITING_FOR_APPROVAL, TaskState.VERIFYING,
+        TaskState.WAITING_FOR_APPROVAL, TaskState.VERIFYING, TaskState.PAUSED,
         TaskState.PLANNING,  # replan
     }),
-    TaskState.WAITING_FOR_APPROVAL: frozenset({TaskState.RUNNING, TaskState.CANCELLED}),
-    TaskState.VERIFYING: frozenset({TaskState.COMPLETED, TaskState.FAILED, TaskState.RUNNING}),
+    TaskState.PAUSED: frozenset({TaskState.RUNNING, TaskState.CANCELLED}),
+    TaskState.WAITING_FOR_APPROVAL: frozenset({TaskState.RUNNING, TaskState.CANCELLED, TaskState.PAUSED}),
+    TaskState.VERIFYING: frozenset({TaskState.COMPLETED, TaskState.FAILED, TaskState.RUNNING, TaskState.PAUSED}),
     TaskState.COMPLETED: frozenset(),
     TaskState.FAILED: frozenset(),
     TaskState.CANCELLED: frozenset(),
@@ -46,7 +48,13 @@ class TaskRuntime:
     def __init__(self) -> None:
         self._tasks: dict[str, Task] = {}
 
-    def create_task(self, goal: str, *, plan: Plan | None = None) -> Task:
+    def create_task(
+        self, 
+        goal: str, 
+        *, 
+        plan: Plan | None = None,
+        capability_constraints: CapabilityConstraints | None = None
+    ) -> Task:
         """Create a pending task and return a detached snapshot."""
         if not goal.strip():
             raise ValueError("task goal must not be empty")
@@ -59,6 +67,7 @@ class TaskRuntime:
             created_at=now,
             updated_at=now,
             plan=deepcopy(plan),
+            capability_constraints=capability_constraints,
         )
         self._tasks[task.task_id] = task
         return deepcopy(task)

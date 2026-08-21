@@ -31,3 +31,24 @@ class FailingTool(RecordingTool):
     def _execute(self, request: ToolRequest) -> ToolResult:
         self.execution_count += 1
         raise RuntimeError("test tool failed")
+
+class FastFakeTool(Tool):
+    def __init__(self, name: str, capability: str, sandbox=None) -> None:
+        self._metadata = ToolMetadata(
+            name=name,
+            description="Fake tool for testing",
+            capability=capability,
+            input_schema=ToolInputSchema(required_arguments=frozenset()),
+        )
+        self.sandbox = sandbox
+
+    @property
+    def metadata(self) -> ToolMetadata:
+        return self._metadata
+
+    def _execute(self, request: ToolRequest) -> ToolResult:
+        return ToolResult(
+            request_id=request.request_id,
+            status=ToolResultStatus.SUCCESS,
+            output={"fake_success": True},
+        )

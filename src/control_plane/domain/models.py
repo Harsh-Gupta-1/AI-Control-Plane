@@ -16,6 +16,7 @@ class TaskState(str, Enum):
     PENDING = "pending"
     PLANNING = "planning"
     RUNNING = "running"
+    PAUSED = "paused"
     WAITING_FOR_APPROVAL = "waiting_for_approval"
     VERIFYING = "verifying"
     COMPLETED = "completed"
@@ -123,6 +124,13 @@ class Observation:
 
 
 @dataclass
+class CapabilityConstraints:
+    """Task-specific capability restrictions enforced at runtime."""
+
+    allowed_capabilities: frozenset[str]
+
+
+@dataclass
 class Task:
     """Canonical task data held by ``TaskRuntime``."""
 
@@ -132,6 +140,7 @@ class Task:
     created_at: datetime
     updated_at: datetime
     plan: Plan | None = None
+    capability_constraints: CapabilityConstraints | None = None
     actions: list[ActionRecord] = field(default_factory=list)
     observations: list[Observation] = field(default_factory=list)
 

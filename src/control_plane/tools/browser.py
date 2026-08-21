@@ -37,8 +37,9 @@ def set_current_url(url):
         f.write(url)
 
 def run():
-    cmd = sys.argv[1]
-    args = json.loads(sys.argv[2])
+    payload = json.load(sys.stdin)
+    cmd = payload.get("cmd")
+    args = payload.get("args", {})
     
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
@@ -100,10 +101,15 @@ if __name__ == '__main__':
 def _execute_playwright(sandbox: Sandbox, cmd: str, args: dict[str, Any], timeout: int = 30) -> ToolResult:
     import base64
     script_b64 = base64.b64encode(PLAYWRIGHT_SCRIPT.encode("utf-8")).decode("utf-8")
-    args_json = json.dumps(args)
+    payload_b64 = base64.b64encode(json.dumps({"cmd": cmd, "args": args}).encode("utf-8")).decode("utf-8")
     
-    # We use python3 -c to execute the decoded script
-    command = ["bash", "-c", f"echo '{script_b64}' | base64 -d | python3 - {cmd} '{args_json}'"]
+    # We write the decoded script to a temporary file and pass the base64-decoded payload via stdin.
+    # This guarantees no untrusted shell interpolation occurs.
+    command = [
+        "bash", 
+        "-c", 
+        f"echo '{script_b64}' | base64 -d > /tmp/browser_script.py && echo '{payload_b64}' | base64 -d | python3 /tmp/browser_script.py"
+    ]
     result = sandbox.execute(command, timeout_seconds=timeout)
     
     if result.exit_code != 0 or result.timed_out:

@@ -12,6 +12,7 @@ class AgentContext:
     completed_actions: list[dict] = field(default_factory=list)
     recent_observations: list[dict] = field(default_factory=list)
     available_tools: list[dict] = field(default_factory=list)
+    allowed_capabilities: frozenset[str] | None = None
     error_context: str | None = None
 
 class ProposalAction(str, Enum):

@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Protocol
 
-from control_plane.domain import ToolRequest
+from control_plane.domain import ToolRequest, CapabilityConstraints
 
 
 class PolicyDecision(str, Enum):
@@ -26,7 +26,7 @@ class PolicyResult:
 class PolicyGate(Protocol):
     """Side-effect-free authorization boundary used by the dispatcher."""
 
-    def evaluate(self, request: ToolRequest) -> PolicyResult:
+    def evaluate(self, request: ToolRequest, constraints: CapabilityConstraints | None = None) -> PolicyResult:
         """Authorize or block a normalized tool request."""
 
 
@@ -36,7 +36,11 @@ class AllowListedPolicyGate:
     def __init__(self, allowed_capabilities: frozenset[str] = frozenset()) -> None:
         self._allowed_capabilities = allowed_capabilities
 
-    def evaluate(self, request: ToolRequest) -> PolicyResult:
+    def evaluate(self, request: ToolRequest, constraints: CapabilityConstraints | None = None) -> PolicyResult:
+        if constraints is not None:
+            if request.capability not in constraints.allowed_capabilities:
+                return PolicyResult(PolicyDecision.BLOCK, f"capability '{request.capability}' is restricted by task constraints")
+
         if request.capability in self._allowed_capabilities:
             return PolicyResult(PolicyDecision.ALLOW, "capability is explicitly allowed")
         return PolicyResult(PolicyDecision.BLOCK, "capability is not allowed")
@@ -65,7 +69,11 @@ class CapabilityPolicyGate:
     def __init__(self, rules: dict[str, PolicyDecision] | None = None) -> None:
         self._rules = rules or dict(POLICY_RULES)
     
-    def evaluate(self, request: ToolRequest) -> PolicyResult:
+    def evaluate(self, request: ToolRequest, constraints: CapabilityConstraints | None = None) -> PolicyResult:
+        if constraints is not None:
+            if request.capability not in constraints.allowed_capabilities:
+                return PolicyResult(PolicyDecision.BLOCK, f"capability '{request.capability}' is restricted by task constraints")
+
         decision = self._rules.get(request.capability, PolicyDecision.BLOCK)
         return PolicyResult(
             decision=decision,

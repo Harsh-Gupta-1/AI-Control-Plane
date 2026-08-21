@@ -2,7 +2,7 @@
 
 from copy import deepcopy
 
-from control_plane.domain import ToolRequest, ToolResult, ToolResultStatus
+from control_plane.domain import ToolRequest, ToolResult, ToolResultStatus, CapabilityConstraints
 from control_plane.policy import PolicyDecision, PolicyGate
 from control_plane.tools.contracts import ToolInputSchema
 from control_plane.tools.registry import ToolNotFoundError, ToolRegistry
@@ -16,14 +16,14 @@ class ToolDispatcher:
         self._policy_gate = policy_gate
         self._authorizer = authorizer
 
-    def dispatch(self, request: object, approval_id: str | None = None) -> ToolResult:
+    def dispatch(self, request: object, approval_id: str | None = None, constraints: CapabilityConstraints | None = None) -> ToolResult:
         """Return a structured result; never execute an invalid or blocked request."""
         validation_error = self._validate_request(request)
         if validation_error is not None:
             return validation_error
         assert isinstance(request, ToolRequest)
 
-        policy_result = self._policy_gate.evaluate(request)
+        policy_result = self._policy_gate.evaluate(request, constraints)
         
         if policy_result.decision is PolicyDecision.APPROVE:
             if not self._authorizer:

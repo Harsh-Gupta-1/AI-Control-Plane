@@ -114,10 +114,22 @@ class AgentLoop:
             return self._approval_store.get_grant(approval_id)
         return None
         
+    def pause_task(self, task_id: str) -> Task:
+        """Explicitly pause a running task."""
+        task = self._runtime.transition_task(task_id, TaskState.PAUSED)
+        self._emit_trace(TraceEventType.TASK_STATE_CHANGED, task_id, new_state=TaskState.PAUSED.value)
+        return task
+        
+    def cancel_task(self, task_id: str) -> Task:
+        """Cancel a task, preventing further execution and cleaning up."""
+        task = self._runtime.transition_task(task_id, TaskState.CANCELLED)
+        self._emit_trace(TraceEventType.TASK_STATE_CHANGED, task_id, new_state=TaskState.CANCELLED.value)
+        if self._checkpoint_store:
+            self._checkpoint_store.delete(task_id)
+        return task
+        
     def run(self, task_id: str, resume: bool = False) -> Task:
         """Execute the agent loop for a task until completion or failure."""
-        task = self._runtime.get_task(task_id)
-        
         iterations = 0
         consecutive_failures = 0
         
@@ -128,7 +140,9 @@ class AgentLoop:
                 consecutive_failures = ckpt.consecutive_failures
                 # Hardening fix: actually restore the task into the runtime
                 # so a new AgentLoop can pick up exactly where it left off.
-                task = self._runtime.restore_task(ckpt.task)
+                self._runtime.restore_task(ckpt.task)
+                
+        task = self._runtime.get_task(task_id)
         
         if task.state == TaskState.PENDING:
             task = self._runtime.transition_task(task_id, TaskState.PLANNING)
@@ -155,6 +169,9 @@ class AgentLoop:
             if task.state in {TaskState.COMPLETED, TaskState.FAILED, TaskState.CANCELLED}:
                 if self._checkpoint_store:
                     self._checkpoint_store.delete(task_id)
+                return task
+            if task.state == TaskState.PAUSED:
+                # Yield control back to caller without deleting checkpoint
                 return task
                 
             # Construct AgentContext
@@ -200,6 +217,7 @@ class AgentLoop:
                 completed_actions=completed_actions,
                 recent_observations=recent_observations,
                 available_tools=available_tools,
+                allowed_capabilities=task.capability_constraints.allowed_capabilities if task.capability_constraints else None,
                 error_context=error_context
             )
             
@@ -218,6 +236,10 @@ class AgentLoop:
                 self._emit_trace(TraceEventType.TASK_FAILED, task_id, reason=f"LLM Error: {e}")
                 if self._checkpoint_store:
                     self._checkpoint_store.delete(task_id)
+                return task
+                
+            task = self._runtime.get_task(task_id)
+            if task.state in {TaskState.COMPLETED, TaskState.FAILED, TaskState.CANCELLED, TaskState.PAUSED}:
                 return task
                 
             iterations += 1
@@ -259,7 +281,7 @@ class AgentLoop:
                 action_req = ActionRequest(action_type=req.tool_name, arguments=req.arguments)
                 self._runtime.record_action(task_id, action_req)
                 
-                result = self._dispatcher.dispatch(req)
+                result = self._dispatcher.dispatch(req, constraints=task.capability_constraints)
                 
                 if result.error and result.error.code == "approval_required":
                     self._emit_trace(TraceEventType.APPROVAL_REQUESTED, task_id, capability=result.error.message)
@@ -288,7 +310,7 @@ class AgentLoop:
                         
                         if grant:
                             self._emit_trace(TraceEventType.TOOL_INVOKED, task_id, tool_name=req.tool_name)
-                            result = self._dispatcher.dispatch(req, approval_id=grant.approval_id)
+                            result = self._dispatcher.dispatch(req, approval_id=grant.approval_id, constraints=task.capability_constraints)
                             self._emit_trace(TraceEventType.TOOL_RESULT, task_id, status=result.status.value, tool_name=req.tool_name)
                         else:
                             obs_content = f"status=blocked error=approval_rejected:Request was rejected"
